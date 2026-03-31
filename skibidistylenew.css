@@ -1,6 +1,10 @@
 /* Playlist Header Styling */
 /* Playlist Header Styling */
 
+.footerInfoDiv {
+  display:flex;flex-grow:1
+}
+
 .song-art-previews {
     display: flex;
     flex-direction: column;
@@ -623,7 +627,7 @@ padding-bottom:150px;
   opacity: 0.8;
 }
 
-#songInfo {
+#songInfo, .songInfo {
   display: flex;
   flex-direction: column;
   min-width:0;
@@ -637,12 +641,12 @@ overflow: hidden;
 text-overflow: ellipsis;
 }
 
-#songInfo h3 {
+#songInfo h3, .songInfo h3 {
   font-size: 18px;
   margin-bottom: 5px;
 }
 
-#songInfo p {
+#songInfo p, .songInfo p {
   font-size: 14px;
   color: #AAA;
 }
@@ -2150,11 +2154,11 @@ li.disabled-offline {
     margin-right: 10px;
   }
 
-  #songInfo h3 {
+  #songInfo h3, .songInfo h3 {
     font-size: 16px;
   }
 
-  #songInfo p {
+  #songInfo p, .songInfo p {
     font-size: 13px;
   }
 
@@ -2201,12 +2205,12 @@ li.disabled-offline {
     margin-right: 8px;
   }
 
-  #songInfo h3 {
+  #songInfo h3, .songInfo h3 {
     font-size: 15px;
     margin-bottom: 2px;
   }
 
-  #songInfo p {
+  #songInfo p, .songInfo p {
     font-size: 12px;
   }
 

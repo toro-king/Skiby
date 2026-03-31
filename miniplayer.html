@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>
+$=(id)=>document.getElementById(id);
+
+const footer = document.querySelector('.footer')
+const playPauseBtn = $('playPauseBtn');
+const prevBtn = $('prevBtn');
+const nextBtn = $('nextBtn');
+const shuffleBtn = $('shuffleBtn');
+const shuffleIndicator = $('shuffleIndicator')
+const repeatBtn = $('repeatBtn');
+const repeatIndicator = $('repeatIndicator')
+const volumeBtn = $('volumeBtn')
+const volumeSlider = $('volumeSlider');
+const fullscreenBtn = $('fullscreenToggleBtn')
+const albumCover = $('albumCover');
+const songTitle = $('songTitle');
+const songArtist = $('songArtist');
+const playPauseBtnImg = $('playPauseBtnImg')
+const totalTimeSpan = $('totalTime')
+const progressBar = $('progressBar')
+const currentTimeSpan = $('currentTime')
+
+function createEl(name,classs) {
+    const el = document.createElement(name)
+    if (classs) el.className = classs
+    return el
+}
+
+function getAverageColor(imgElement) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    canvas.width = imgElement.naturalWidth;
+    canvas.height = imgElement.naturalHeight;
+
+    context.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
+
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    let r = 0,
+        g = 0,
+        b = 0,
+        count = 0;
+
+    for (let i = 0; i < data.length; i += 4) {
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+        count++;
+    }
+
+    r = Math.round(r / count);
+    g = Math.round(g / count);
+    b = Math.round(b / count);
+
+    return {r, g, b}
+}
+
+function makePlayerControls() {
+    const playerControls = createEl('div','player-controls')
+    const controlItem1 = createEl('div','control-item')
+    playerControls.appendChild(controlItem1)
+    controlItem1.appendChild(shuffleBtn)
+    controlItem1.appendChild(shuffleIndicator)
+    playerControls.appendChild(prevBtn)
+    playerControls.appendChild(playPauseBtn)
+    playerControls.appendChild(nextBtn)
+    const controlItem2 = createEl('div','control-item')
+    playerControls.appendChild(controlItem2)
+    controlItem2.appendChild(repeatBtn)
+    controlItem2.appendChild(repeatIndicator)
+    return playerControls
+}
+
+function mode1() {
+    const css = createEl('style','css')
+    css.textContent = `
+        .mode1_albumContainer {
+            flex-grow:1;
+            background-color: pink;
+            text-align: center;
+            margin: 4px;
+            border-radius: 6px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mode1_albumContainer #albumCover {
+            height: 100%;
+            border-radius: 6px;
+        }
+
+        .mode1_albumContainer::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            opacity: 0;
+        }
+
+        .mode1_albumContainer:hover::after {
+            opacity: 1;
+        }
+
+        .player-controls {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 2px;
+            z-index: 2;
+            opacity: 0;
+        }
+
+        #playPauseBtn {
+            width: 48px;
+            height: 48px;
+            background-color: white;
+            border-radius: 100%;
+        }
+
+        #playPauseBtn img {
+            filter: invert(0%);
+        }
+
+        #playPauseBtn:hover {
+            background-color: #f0f0f0;
+        }
+        #playPauseBtn:active {
+            background-color: #c0c0c0;
+        }
+
+        .mode1_albumContainer:hover .player-controls {
+            opacity: 1;
+        }
+
+        .mode1_timeContainer {
+            position: absolute;
+            bottom: 0px;
+            width: calc(100% - 8px);
+        }
+        
+        .mode1_timeSpans {
+            display: flex;
+            justify-content: space-between;
+            color: white;
+        }
+
+        #progressBar {
+            width: 100%;
+        }
+
+        #totalTimeSpan {
+            text-align:right;
+        }
+    `
+    document.head.appendChild(css)
+
+    const albumContainer = createEl('div','mode1_albumContainer')
+    footer.appendChild(albumContainer)
+    albumContainer.appendChild(albumCover)
+
+    const playerControls = makePlayerControls()
+    albumContainer.appendChild(playerControls)
+
+    const timeContainer = createEl('div','mode1_timeContainer')
+    playerControls.appendChild(timeContainer)
+    const timeSpans = createEl('div','mode1_timeSpans')
+    timeContainer.appendChild(timeSpans)
+    timeSpans.appendChild(currentTimeSpan)
+    timeSpans.appendChild(totalTimeSpan)
+    timeContainer.appendChild(progressBar)
+}
+
+function mode2() {
+    mode1()
+    const css = createEl('style','css')
+    css.textContent = `
+        .mode2_bottomContainer {
+            padding: 8px;
+            width: 100%;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+    `
+    document.head.appendChild(css)
+    const bottomContainer = createEl('div','mode2_bottomContainer')
+    footer.appendChild(bottomContainer)
+    const songInfo = createEl('div','songInfo')
+    bottomContainer.appendChild(songInfo)
+    songInfo.appendChild(songTitle)
+    songInfo.appendChild(songArtist)
+}
+
+function mode3() {
+    const css = createEl('style','css')
+    css.textContent = `
+        .footer {
+            display: flex;
+            align-items: center;
+            flex-direction: row;
+        }
+
+        .now-playing {
+            display: flex;
+            align-items: center;
+            flex-grow: 1;
+            min-width: 0;
+            margin-right: 10px;
+            overflow: hidden;
+            justify-content: flex-start;
+        }
+
+        .now-playing img {
+            height: min(90vh, 60px);
+            object-fit: cover;
+            border-radius: 5px;
+            margin-right: 15px;
+            margin-left: 5px;
+        }
+
+        .now-playing img .album-icon {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            background-color: rgba(0, 0, 0, 0.6);
+            border-radius: 50%;
+            padding: 2px;
+            cursor: pointer;
+            display: none;
+        }
+
+        .player-controls {
+            display: flex;
+            align-items: center;
+        }
+
+        @media (max-width: 400px) {
+            #shuffleBtn, #repeatBtn, #shuffleIndicator, #repeatIndicator {
+                display: none;
+            }
+        }
+
+        @media (max-width: 520px) {
+            #albumCover, .now-playing {
+                margin-right: 5px;
+            }
+        }
+
+        #songTitle {
+            font-size: 18px;
+        }
+    `
+    document.head.appendChild(css)
+
+    const nowPlaying = createEl('div','now-playing')
+    footer.appendChild(nowPlaying)
+    nowPlaying.appendChild(albumCover)
+    const songInfo = createEl('div','songInfo')
+    nowPlaying.appendChild(songInfo)
+    songInfo.appendChild(songTitle)
+    songInfo.appendChild(songArtist)
+    const playerControls = makePlayerControls()
+    footer.appendChild(playerControls)
+}
+
+function switchMode(mode) {
+    const func = window['mode' + Number(mode)]
+    document.head.querySelectorAll('.css').forEach(el => el.remove())
+    if (mode !== "0") {
+        const css = createEl('style','css')
+        css.textContent = `
+            body {
+                background: linear-gradient(#202124, #121212);
+                overflow: hidden;
+                font-family: 'Roboto', sans-serif;
+            }
+
+            .footer {
+                display: flex;
+                flex-direction: column;
+                width: 100%;
+                height: 100vh;
+            }
+
+            .hidden {
+                display: none !important;
+            }
+
+            .songInfo {
+                white-space: nowrap;
+                overflow: hidden;
+            }
+
+            .songInfo h3 {
+                font-size: 20px;
+                color: white;
+                margin-bottom: 5px;
+            }
+
+            .songInfo p {
+                font-size: 14px;
+                color: #AAA;
+            }
+
+            .player-controls button {
+                width: 32px;
+                height:32px;
+                cursor: pointer;
+                background: none;
+                border: none;
+            }
+
+            .player-controls button img {
+                width: 16px;
+                height: 16px;
+                filter: invert(100%);
+            }
+
+            .player-controls button.active img {
+                filter: invert(59%) sepia(29%) saturate(1078%) hue-rotate(89deg) brightness(95%) contrast(94%);
+            }
+
+            .control-item {
+                position: relative;
+                display: inline-flex;
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .control-item .indicator {
+                position: absolute;
+                bottom: -5px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 8px;
+                height: 8px;
+                background-color: #1DB954;
+                border-radius: 50%;
+                display: block;
+            }
+        `
+        document.head.appendChild(css)
+    }
+    footer.innerHTML = ''
+    func()
+    if (albumCover.complete) setBackgroundBasedOnAlbum()
+}
+
+document.onkeydown = (ev) => {
+    if (window['mode' + Number(ev.key)]) switchMode(ev.key)
+}
+
+function setBackgroundBasedOnAlbum() {
+    const colorableElement = document.body.querySelector('.mode1_albumContainer')
+    if (colorableElement) {
+        const {r, g, b} = getAverageColor(albumCover)
+        const colors = [r, g, b].map(c => Math.min(c * 1.25, 255))
+        colorableElement.style.backgroundColor = `rgb(${colors[0]}, ${colors[1]}, ${colors[2]})`
+    }
+}
+albumCover.onload = setBackgroundBasedOnAlbum
+if (albumCover.complete) setBackgroundBasedOnAlbum()
+
+let switchTimeout;
+function updateMode() {
+    if (switchTimeout) return;
+    switchTimeout = setTimeout(()=>{
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const ratio = w / h;
+
+        if (ratio < 1.01) switchMode("2")
+        else if (ratio < 2.5) switchMode("1")
+        else switchMode("3")
+        
+        switchTimeout = null;
+    },200)
+}
+
+updateMode();
+window.onresize = updateMode
+</script>
+</head>
+<body>
+    <!-- The footer / div will be moved into here -->
+</body>
+</html>
