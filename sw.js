@@ -1,69 +1,102 @@
-// sw.js (Updated with URL lists)
+// sw.js
 
-// Define a name for our cache and a version.
 const APP_SHELL_CACHE_NAME = 'skiby-app-shell-v1';
 const DYNAMIC_DATA_CACHE_NAME = 'skiby-dynamic-data-v1';
 
-// List all the files that make up the "app shell".
 const APP_SHELL_URLS = [
-    '/songplayer/MusicPlayerfull.html',
-    '/songplayer/skibidistyle.css',
-    '/static/windowalertreplacement.js',
-    '/songplayer/image/logo.png',
-    '/songplayer/image/genericalbumcover.jpg',
-    '/songplayer/image/allsongsart.jpg',
-    '/songplayer/image/img7.jpg',
-    '/songplayer/image/img8.jpg',
-    '/songplayer/image/img9.jpg',
-    '/songplayer/image/img10.jpg',
-    '/songplayer/image/img11.jpg',
-    '/songplayer/image/img12.jpg',
-    '/songplayer/image/img6.jpg',
-    '/songplayer/icons/prev.svg',
-    '/songplayer/icons/play.svg',
-    '/songplayer/icons/pause.svg',
-    '/songplayer/icons/next.svg',
-    '/songplayer/icons/shuffle.svg',
-    '/songplayer/icons/repeat.svg',
-    '/songplayer/icons/volume.svg',
-    '/songplayer/icons/fullscreen.svg',
-    '/songplayer/icons/local.svg',
-    '/songplayer/icons/online.svg',
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
+    'https://torok.ing/static/windowalertreplacement.js',
+    'https://torok.ing/songplayer/image/logo.png',
+    'https://torok.ing/songplayer/image/logo-192.png',
+    'https://torok.ing/songplayer/image/genericalbumcover.jpg',
+    'https://torok.ing/songplayer/image/allsongsart.jpg',
+    'https://torok.ing/songplayer/image/img7.jpg',
+    'https://torok.ing/songplayer/image/img8.jpg',
+    'https://torok.ing/songplayer/image/img9.jpg',
+    'https://torok.ing/songplayer/image/img10.jpg',
+    'https://torok.ing/songplayer/image/img11.jpg',
+    'https://torok.ing/songplayer/image/img12.jpg',
+    'https://torok.ing/songplayer/image/img6.jpg',
+    'https://torok.ing/songplayer/icons/prev.svg',
+    'https://torok.ing/songplayer/icons/play.svg',
+    'https://torok.ing/songplayer/icons/pause.svg',
+    'https://torok.ing/songplayer/icons/next.svg',
+    'https://torok.ing/songplayer/icons/shuffle.svg',
+    'https://torok.ing/songplayer/icons/repeat.svg',
+    'https://torok.ing/songplayer/icons/volume.svg',
+    'https://torok.ing/songplayer/icons/fullscreen.svg',
+    'https://torok.ing/songplayer/icons/local.svg',
+    'https://torok.ing/songplayer/icons/online.svg',
+    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+    'https://fonts.googleapis.com/css2?family=Roboto&display=swap',
+    'https://torok.ing/songplayer/MusicPlayernew.html',
+    'https://torok.ing/songplayer/musicscript.js',
+    'https://torok.ing/songplayer/miniplayer.html',
+    'https://torok.ing/songplayer/skibidistylenew.css',
 ];
 
-// --- NEW: Lists for routing ---
-
-// List of paths for dynamic content that should use a "Network First" strategy.
 const DYNAMIC_URLS = [
-    '/songplayer/songs.json',
-    '/songplayer/playlists.json',
-    '/account/user/pfp/my',
-    '/auth/test',
-    '/songplayer/playlistarts/' // Using a partial match for this directory
+    'https://torok.ing/songplayer/songs.json',
+    'https://torok.ing/songplayer/playlists.json',
+    'https://torok.ing/account/user/pfp/my',
+    'https://torok.ing/static/NEWaccountinjection.js',
+    'https://torok.ing/static/justsomeutils.js',
+    'https://torok.ing/songplayer/manifest2.json',
+    'https://torok.ing/auth/test',
 ];
 
-// List of paths that the service worker should completely ignore.
-const IGNORED_URLS = [
-    '/songplayer/upload', // Critical for file upload progress to work
-    '/songplayer/modify',
-    '/songplayer/delete',
-    '/songplayer/create',
+// Files controlled by /songplayer/version
+const VERSIONED_PLAYER_FILES = [
+    'https://torok.ing/songplayer/MusicPlayernew.html',
+    'https://torok.ing/songplayer/musicscript.js',
+    'https://torok.ing/songplayer/miniplayer.html',
+    'https://torok.ing/songplayer/skibidistylenew.css',
 ];
 
+const VERSION_ENDPOINT = 'https://torok.ing/songplayer/version';
 
-// The 'install' event
 self.addEventListener('install', event => {
     console.log('[Service Worker] Install');
+
     event.waitUntil(
-        caches.open(APP_SHELL_CACHE_NAME).then(cache => {
-            console.log('[Service Worker] Caching App Shell');
-            return cache.addAll(APP_SHELL_URLS);
-        })
+        Promise.all([
+            caches.open(APP_SHELL_CACHE_NAME).then(async cache => {
+                for (const url of APP_SHELL_URLS) {
+                    const match = await cache.match(url);
+                    if (!match) {
+                        try {
+                            const res = await fetch(url);
+                            if (res.ok) {
+                                await cache.put(url, res.clone());
+                            }
+                        } catch (e) {
+                            console.warn('Failed to cache:', url);
+                        }
+                    }
+                }
+            }),
+
+            caches.open(DYNAMIC_DATA_CACHE_NAME).then(async cache => {
+                console.log('[Service Worker] Pre-caching Dynamic URLs');
+
+                const urlsToPrecache = DYNAMIC_URLS.filter(url => !url.endsWith('/'));
+
+                await Promise.all(
+                    urlsToPrecache.map(async url => {
+                        try {
+                            const response = await fetch(url, { credentials: 'same-origin' });
+                            if (response.ok) {
+                                await cache.put(url, response.clone());
+                            }
+                        } catch (err) {
+                            console.warn('[Service Worker] Failed to pre-cache:', url, err);
+                        }
+                    })
+                );
+            })
+        ]).then(() => self.skipWaiting())
     );
 });
 
-// The 'activate' event
 self.addEventListener('activate', event => {
     console.log('[Service Worker] Activate');
     event.waitUntil(
@@ -81,72 +114,171 @@ self.addEventListener('activate', event => {
     return self.clients.claim();
 });
 
-// The 'fetch' event - Now using the URL lists
 self.addEventListener('fetch', event => {
     const { request } = event;
     const url = new URL(request.url);
 
-    // --- UPDATED LOGIC ---
-
-    // Strategy 0: Ignore specific URLs.
-    // Check if the request path matches any in the IGNORED_URLS list.
-    if (IGNORED_URLS.some(path => url.pathname.startsWith(path))) {
-        return; // Do nothing, let the browser handle it.
+    // Special case: music player shell
+    // Serve cached version immediately, but update cache in background.
+    if (url.pathname === '/songplayer/MusicPlayernew.html') {
+        console.log('[Service Worker] Checking for updates');
+        event.respondWith(fromCache(request));
+        event.waitUntil(checkAndRefreshPlayerAssets());
+        return;
     }
 
-    // Strategy 1: Network-First for dynamic content.
-    // Check if the request path matches any in the DYNAMIC_URLS list.
-    if (DYNAMIC_URLS.some(path => url.pathname.startsWith(path))) {
+    // Network-first for dynamic content
+    if (DYNAMIC_URLS.some(path => url.pathname.startsWith(path)) || url.pathname === '/' || url.pathname === '/app') {
         event.respondWith(fetchAndCache(request));
         return;
     }
 
-    // Strategy 2: Cache-First for App Shell.
-    // Check if the request URL is one of our core app shell assets.
+    // Cache-first for app shell
     if (APP_SHELL_URLS.includes(url.pathname) || APP_SHELL_URLS.includes(url.href)) {
         event.respondWith(fromCache(request));
         return;
     }
 
-    // Strategy 3 (Default): For anything else (like song files), just fetch from the network.
-    event.respondWith(fetch(request).catch(() => {
-        // This just prevents a hard browser error for un-cached resources when offline.
-    }));
+    // Default: network only
+    event.respondWith(
+        fetch(request).catch(() => {
+            return caches.match(request);
+        })
+    );
 });
 
-
-/**
- * Serves a request from the cache first. If not found, it falls back to the network.
- * @param {Request} request The request to be handled.
- * @returns {Promise<Response>}
- */
 function fromCache(request) {
     return caches.match(request).then(cachedResponse => {
-        // If a cached response is found, return it.
         if (cachedResponse) {
             return cachedResponse;
         }
-        // Otherwise, fetch the request from the network.
         return fetch(request);
     });
 }
 
-/**
- * Fetches from the network and updates the cache. If the network fails,
- * it falls back to the cache.
- * @param {Request} request The request to be handled.
- * @returns {Promise<Response>}
- */
 function fetchAndCache(request) {
     return fetch(request).then(networkResponse => {
-        // Clone the response to cache it and return the original.
         const responseToCache = networkResponse.clone();
         caches.open(DYNAMIC_DATA_CACHE_NAME).then(cache => {
             cache.put(request, responseToCache);
         });
         return networkResponse;
     }).catch(() => {
-        // If the network fails, try to serve from the cache as a fallback.
         return caches.match(request);
     });
+}
+
+/**
+ * Fetch /songplayer/version, compare expected sha256 values against the
+ * currently cached player assets, and refresh changed files in background.
+ */
+async function checkAndRefreshPlayerAssets() {
+    try {
+        const versionResponse = await fetch(VERSION_ENDPOINT, {
+            cache: 'no-store',
+            credentials: 'same-origin'
+        });
+
+        if (!versionResponse.ok) {
+            console.warn('[Service Worker] Version check failed:', versionResponse.status);
+            return;
+        }
+
+        const versionMap = await versionResponse.json();
+        const cache = await caches.open(APP_SHELL_CACHE_NAME);
+
+        let updatedSomething = false;
+
+        await Promise.all(
+            VERSIONED_PLAYER_FILES.map(async filePath => {
+                try {
+                    const fileName = filePath.split('/').pop();
+                    const expectedEntry = versionMap[fileName];
+                    const expectedSha = expectedEntry && expectedEntry.sha256;
+
+                    if (!expectedSha) {
+                        return;
+                    }
+
+                    const cachedResponse = await cache.match(filePath);
+
+                    // No cached file yet: fetch and store it.
+                    if (!cachedResponse) {
+                        const freshResponse = await fetch(filePath, {
+                            cache: 'no-store',
+                            credentials: 'same-origin'
+                        });
+
+                        if (!freshResponse.ok) {
+                            return;
+                        }
+
+                        const freshSha = await sha256OfResponse(freshResponse.clone());
+                        if (freshSha === expectedSha) {
+                            await cache.put(filePath, freshResponse.clone());
+                            console.log('[Service Worker] Cached missing player asset:', filePath);
+                        } else {
+                            console.warn('[Service Worker] Fresh asset hash mismatch for:', filePath);
+                        }
+                        return;
+                    }
+
+                    const cachedSha = await sha256OfResponse(cachedResponse.clone());
+
+                    if (cachedSha !== expectedSha) {
+                        const freshResponse = await fetch(filePath, {
+                            cache: 'no-store',
+                            credentials: 'same-origin'
+                        });
+
+                        if (!freshResponse.ok) {
+                            console.warn('[Service Worker] Failed refreshing asset:', filePath);
+                            return;
+                        }
+
+                        const freshSha = await sha256OfResponse(freshResponse.clone());
+
+                        if (freshSha === expectedSha) {
+                            await cache.put(filePath, freshResponse.clone());
+                            updatedSomething = true;
+                            console.log('[Service Worker] Updated cached asset:', filePath);
+                        } else {
+                            console.warn('[Service Worker] Refreshed asset hash mismatch for:', filePath);
+                        }
+                    }
+                } catch (err) {
+                    console.warn('[Service Worker] Asset refresh error for:', filePath, err);
+                }
+            })
+        );
+
+        if (updatedSomething) {
+            await notifyClientsUpdateInstalled();
+        }
+    } catch (err) {
+        console.warn('[Service Worker] Background player asset check failed:', err);
+    }
+}
+
+/**
+ * Computes SHA-256 hex for a response body.
+ */
+async function sha256OfResponse(response) {
+    const buffer = await response.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function notifyClientsUpdateInstalled() {
+    const clientsList = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true
+    });
+
+    for (const client of clientsList) {
+        client.postMessage({
+            type: "PLAYER_ASSETS_UPDATED"
+        });
+    }
 }

@@ -213,6 +213,10 @@ function createEl(name,classs) {
     return el
 }
 
+function arraysEqual(a, b) {
+    return a.length === b.length && a.every((val, i) => val === b[i]);
+}
+
 function restoreSong() {
     if (restored) return;
     restored = true;
@@ -249,6 +253,11 @@ const init = () => {
     })
     renderPlaylists();
     selectPlaylist("all songs")
+    workThroughQueue()
+    songsOnDevice.forEach(async id=>{
+        const song = await getIdFromDb(id)
+        checkForOnlineChange(song)
+    })
 }
 
 function fetchJsons() {
@@ -256,13 +265,24 @@ function fetchJsons() {
         fetch('https://torok.ing/songplayer/songs.json').then(a=>a.json()),
         fetch('https://torok.ing/songplayer/playlists.json').then(a=>a.json())
     ]).then(([s,p])=>{
-        songs = Array.from([...s, ...songs].reduce((map,obj)=>{
-            const existing = map.get(obj.id);
-            if (!existing || new Date(obj.modified) > new Date(existing.modified))
-                map.set(obj.id, obj);
-            return map;
-        }, new Map()).values())
-        playlists = p
+        if (loggedIn) s.map(s2=>songOwnership[s2.id] = userid)
+        const combined = [...s, ...songs];
+        const result = {};
+        for (const obj of combined) {
+            const existing = result[obj.id];
+            if (!existing || new Date(obj.modified) > new Date(existing.modified)) {
+                result[obj.id] = obj;
+            }
+        }
+        songs = Object.values(result);
+        if (!playlists.length || playlists[0].id === "all songs")
+            playlists.shift() 
+        playlists = playlists.map((p2,i)=>{
+            if (!arraysEqual(p2.song_ids, p[i].song_ids)) {
+                // Conflict! In future ask user if they want to keep their version or the server version
+            }
+            return { ...p2, ...p[i] }
+        })
         init()
     })
 }
@@ -351,10 +371,7 @@ function renderPlaylists() {
             ev.preventDefault();
             const targetPlaylist = playlists.find(p=>p.id === playlist.id)
             if (!currentSongDragId || !targetPlaylist || targetPlaylist.id === "all songs") return;
-            if (!targetPlaylist.song_ids.includes(currentSongDragId)) {
-                targetPlaylist.song_ids.push(currentSongDragId)
-                if (currentlyViewingPlaylist?.id === targetPlaylist.id) selectPlaylist(targetPlaylist.id)
-            }
+            addSongsToPlaylist([currentSongDragId], targetPlaylist.id)
         }
         playlistList.appendChild(li)
         if (playlist.id === "all songs") return;
@@ -642,6 +659,20 @@ function updatePlayPauseButton() {
 	}
 }
 
+function checkForOnlineChange(song) {
+    if (!songsOnDevice.has(song.id)) return;
+    const songInSongs = songs.find(s=>s.id === song.id)
+    if (!songInSongs) {
+        songStatuses[song.id] = "local"
+        deleteSong(song.id) // would just making song local be better? the song was deleted on the server anyway
+        return;
+    };
+    if (new Date(songInSongs.modified) > new Date(song.modified) && navigator.onLine) {
+        removeSongMediaFromDevice(song.id)
+        downloadSongForOfflineUse(song.id)
+    }
+}
+
 function getAudioForTrack(song) {
     if (songsOnDevice.has(song.id)) {
         return URL.createObjectURL(song.filename)
@@ -826,9 +857,6 @@ fullscreenRepeatBtn.onclick = () => repeatBtn.click()
 fullscreenProgressBar.oninput = () => progressBar.value = fullscreenProgressBar.value
 
 prevBtn.onclick = () => {
-    if (audio.currentTime < 10) {
-        return "todo go back to the prev track"
-    }
     audio.currentTime = 0
 }
 playPauseBtn.onclick = () => {
@@ -917,8 +945,17 @@ function parseTimeToSeconds(timeStr) {
 	return 0;
 }
 
+async function requestPersistentStorage() {
+    const isPersisted = await navigator.storage.persisted();
+    if (!isPersisted) {
+        const result = await navigator.storage.persist();
+        console.log(`Storage persistence request was ${result ? 'granted' : 'denied'}.`);
+    }
+}
+
 function addSongsFromFiles(files) {
     const ids = []
+    requestPersistentStorage();
     for (const file of files) {
         parseBlob(new Blob([file], {type:file.type})).then(metadata => {
             const newSong = {
@@ -929,6 +966,7 @@ function addSongsFromFiles(files) {
                 length: formatTime(metadata.format.duration),
                 filename: "local song",
                 date_added: new Date().toISOString(),
+                modified: new Date().toISOString(),
             };
             const albumCover = metadata.common.picture ? new Blob([metadata.common.picture[0].data], {type:metadata.common.picture[0].format}) : null
             songStatuses[newSong.id] = "local"
@@ -961,24 +999,28 @@ async function workThroughQueue() {
                 await uploadSongToServer(item.data.id);
             } else if (item.type === "download_song") {
                 await downloadSongForOfflineUse(item.data)
-            } else if (item.type === "create_playlist") {
+            } else if (item.type === "create_playlist" || item.type === "update_playlist") {
                 if (!loggedIn) throw new Error("Need to be logged in to create a playlist on the server")
                 const playlist = playlists.find(p=>p.id === item.data)
-                if (!playlist) return;
-                await fetch('https://torok.ing/songplayer/',{
-                    method: 'PUT',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        action: "create_playlist",
-                        metadata: playlist
+                if (playlist){
+                    const response = await fetch('https://torok.ing/songplayer/',{
+                        method: item.type === "create_playlist" ? "PUT" : "PATCH",
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            action: item.type,
+                            playlist_id: playlist.id,
+                            metadata: playlist
+                        })
                     })
-                }).then(res=>res.json()).then(data=>{
-                    if (!data.success) throw new Error(data.error)
-                })
+                    const res = await response.json();
+                    if (!res.success) throw new Error(res.error)
+                };
             }
         } catch (err) {
             console.warn("Error working through an online queue item:", err, item.data);
-            failedOnlineActionsQueue.push(item);
+            //failedOnlineActionsQueue.push(item);
+            // if an action fails, we currently just skip it and move on to the next one. This is because if we keep retrying failed actions, they will block the queue and prevent any subsequent successful actions from being processed. In the future, we might want to implement a more robust retry mechanism that allows for a certain number of retries before giving up on an action, or we could move failed actions to a separate queue that is retried less frequently. For now, we will just log the error and continue processing the rest of the queue.
+            // shut up copilot
         }
         onlineActionsQueue.shift();
     }
@@ -1005,7 +1047,8 @@ window.addEventListener('offline', () => {
 })
 
 function queueAction(type, data) {
-    if (type === "update_playlist" && queue.find(i=>i.type === "update_playlist" && i.data === data)) return;
+    if ((type === "update_playlist" || type === "create_playlist") 
+        && onlineActionsQueue.find(i=>(i.type === "update_playlist" || i.type === "create_playlist") && i.data === data)) return;
     onlineActionsQueue.push({type, data})
     workThroughQueue();
 }
@@ -1053,7 +1096,8 @@ function addSongsToPlaylist(ids, playlistid) {
         const body = createEl('div')
         body.innerText = "One or more songs you're trying to add to " + playlist.name + " are already in that playlist. Do you want to add them again?"
         showAModal("Warning", body, {
-            okButtonAction: add
+            okButtonAction: add,
+            buttons: true
         })
         return;
     }
@@ -1073,7 +1117,6 @@ function removeSongFromPlaylist(songid, playlistid) {
 }
 
 function deleteSong(id) {
-    const mentionedSong = songs.find(s=>s.id === id)
     if (songStatuses[id] !== "local" && !navigator.onLine) return customAlert("Connect to the World Wide Web to delete this song", "error")
 
     function deleteFromDevice() {
@@ -1088,7 +1131,7 @@ function deleteSong(id) {
         })
     }
 
-    if (songStatuses[id] !== "local" && loggedIn && songOwnership[id] === userid) {
+    if (songStatuses[id] !== "local" && loggedIn && (!songOwnership[id] || songOwnership[id] === userid)) {
         fetch('https://torok.ing/songplayer', {
             method: 'DELETE',
             headers: {
@@ -1108,6 +1151,26 @@ function deleteSong(id) {
     } else deleteFromDevice();
 }
 
+function removeSongMediaFromDevice(id) {
+    if (!songsOnDevice.has(id)) return;
+    function remove() {
+        const transaction = db.transaction('songs','readwrite')
+        transaction.objectStore('songs').delete(id)
+        songsOnDevice.delete(id)
+        delete songStatuses[id]
+        updateSongStatusIcon(id, 'online')
+    }
+    if (!navigator.onLine) {
+        const body = createEl('div')
+        body.innerText = "You're not online, doing this will make the song inaccessable until you go back online!"
+        showAModal("Warning", body, {
+            okButtonAction: remove,
+            buttons: true
+        })
+    }
+    else remove()
+}
+
 async function uploadMedia(file, type, other = []) {
     return new Promise((res, rej) => {
         const formData = new FormData();
@@ -1120,7 +1183,10 @@ async function uploadMedia(file, type, other = []) {
             body: formData
         }).then(res=>res.json()).then(data=>{
             console.log(data.data)
-            if (data.success) res(data.data.split('/').pop())
+            if (data.success) {
+                const filename = data.data.filename || data.data.split('/').pop();
+                res(filename)
+            }
             else rej(data)
         }).catch(err=>{
             rej(err)
@@ -1131,6 +1197,7 @@ async function uploadMedia(file, type, other = []) {
 async function uploadSongToServer(id) {
     return new Promise(async (res, rej) => {
         const song = await getIdFromDb(id)
+        if (!song) return res()
 
         updateSongStatusIcon(id, 'loading')
 
@@ -1144,7 +1211,7 @@ async function uploadSongToServer(id) {
             songOwnership[id] = userid
             res()
         }).catch(err=>{
-            updateSongStatusIcon(id, 'local')
+            updateSongStatusIcon(id, 'file')
             customAlert(err.error, 'error')
             rej(err)
         })
@@ -1460,7 +1527,8 @@ async function openEditSongModal(song) {
                     fullscreenbg: fullscreenBgForStore,
                     title: metadata.title,
                     artist: metadata.artist,
-                    album: metadata.album
+                    album: metadata.album,
+                    modified: new Date().toISOString()
                 })
             }    
             editSongModalUnsaved.classList.add('hidden');
@@ -1696,11 +1764,7 @@ document.addEventListener('contextmenu',(ev)=>{
                 label: "Remove downloaded file",
                 icon: "fas fa-xmark",
                 action: () => {
-                    const transaction = db.transaction('songs','readwrite')
-                    transaction.objectStore('songs').delete(id)
-                    songsOnDevice.delete(id)
-                    delete songStatuses[id]
-                    updateSongStatusIcon(id, 'online')
+                    removeSongMediaFromDevice(id)
                 },
                 danger: true
             })
@@ -1714,7 +1778,7 @@ document.addEventListener('contextmenu',(ev)=>{
             })
         }
         base.push("hr")
-        if (songOwnership[id] === userid || songStatuses[id] === "local") {
+        if (!songOwnership[id] || songOwnership[id] === userid || songStatuses[id] === "local") {
             base.push({
                 label: "Add to playlist",
                 icon: "fas fa-plus",
@@ -1840,7 +1904,6 @@ playlistThreeDotsBtn.onclick = (ev) => {
 };
 
 updateControlBtns()
-workThroughQueue()
 
 ;[editSongModal, editPlaylistModal].forEach((thing)=>{
     const tabButtons = thing.querySelectorAll('.tab-button')
@@ -1855,3 +1918,22 @@ workThroughQueue()
     });
     thing.querySelector('.close-button').onclick = () => thing.classList.add('hidden')
 })
+
+setTimeout(()=>{
+    navigator.serviceWorker.register('sw.js')
+    .catch(error => {
+        console.log('Service Worker registration failed:', error);
+    });
+},1000)
+
+window.addEventListener('message',(ev)=>{
+    if (ev.data && ev.data.type === 'login_status' && ev.data.loggedIn === true) {
+        fetchJsons()
+    }
+})
+
+navigator.serviceWorker.onmessage = (ev) => {
+    if (ev.data?.type === "PLAYER_ASSETS_UPDATED") {
+        customAlert("Updates installed, refresh the page to see changes", "info")
+    }
+}
