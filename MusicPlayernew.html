@@ -55,7 +55,7 @@
                     <button id="addPlaylistBtn" class="add-playlist-btn" title="New Playlist">
                         <i class="fas fa-plus"></i>
                     </button>
-                    <div id="addPlaylistPopup" class="hidden">
+                    <div id="addPlaylistPopup" class="hidden popup">
                         <p>New playlist name:</p>
                         <input type="text" id="newPlaylistName" placeholder="Enter playlist name">
                         <button id="confirmAddPlaylistBtn" class="button">Add</button>
@@ -216,7 +216,7 @@
         <div class="footerInfoDiv">
             <div class="now-playing">
                 <div class="album-cover-container">
-                    <img id="albumCover" src="https://torok.ing/songplayer/image/genericalbumcover.jpg" alt="Album Cover">
+                    <img crossorigin="use-credentials" id="albumCover" src="https://torok.ing/songplayer/image/genericalbumcover.jpg" alt="Album Cover">
                 </div>
                 <div id="songInfo">
                     <h3 id="songTitle">Title</h3>
@@ -250,6 +250,18 @@
 
             <!-- Column 3: Extra Controls (New) -->
             <div class="extra-controls">
+                <button id="deviceBtn" title="Devices">
+                    <img src="https://torok.ing/songplayer/icons/device.svg" alt="Devices">
+                </button>
+                <div id="devicePopup" class="hidden popup">
+                    <div id="devicePopupTop">
+                        <img src="https://torok.ing/songplayer/icons/chevron_left.svg" id="backChevron" class="hidden"> 
+                        <h3>Devices</h3>
+                    </div>
+                    <div id="deviceList">
+                        <p id="no-devices">Getting devices...</p>
+                    </div>
+                </div>
                 <button id="volumeBtn" title="Volume">
                     <img src="https://torok.ing/songplayer/icons/volume.svg" alt="Volume">
                 </button>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Skiby</title>
+    <!-- Google Fonts for better typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="https://torok.ing/songplayer/image/logo-192.png">
+    <meta name="viewport" content="width=device-width, initial-scale=0.9">
+    <script src="https://torok.ing/static/accountinjection.js"></script>
+<link rel="stylesheet" href="https://torok.ing/songplayer/skibidistylenew.css">
+<style>
+    .svgicon {
+        width: 16px;
+        height: 16px;
+    }
+</style>
+</head>
+<body>
+    <header class="top-nav">
+        <div class="nav-left">
+            <div class="brand">
+                <img src="https://torok.ing/songplayer/image/logo.png" alt="Skiby Logo" class="logo">
+                <span class="brand-name">Skiby</span>
+            </div>
+        </div>
+        <div class="nav-center">
+            <div class="mode-selector">
+                <button id="homeMode" class="active">Home</button>
+                <button id="onlineMode">FAQ</button>
+            </div>
+        </div>
+    <div class="nav-right" id="navRight">
+        <button id="openAppButton">Open App</button>
+    </div>
+    </header>
+    <div id="homeSection" class="section">
+        <h1>Skiby</h1>
+        <h2>Just another music player for you and your music.</h2>
+        <h3>Todo: Make this actually look good</h3>
+        <hr>
+        <h2>But why?</h2>
+        <p>Skiby was built for ease of use in mind. It is for the people who just want to listen to a bunch of MP3s, without all the extra features other music players have. Skiby handles songs and playlists; it is up to you what content you put in it.</p>
+        <hr>
+        <h2>All the features you'd want in a music player</h2>
+        <h3>Free-to-use</h3>
+        <p>You can use skiby as much as you'd like for free in the browser; there will never be a subscription or permium plan available. You can add thousands of songs to your library without paying a dime. Adding songs is as simple as dragging files into your browser.</p>
+        <h3>No sign-in</h3>
+        <p>Logging in to an account is totally optional. If you choose not to sign in, you will still be able to Skiby in its entirity; the app will only use files on your local device.</p>
+        <h3>Upload once, listen everywhere</h3>
+        <p>If you do choose to sign into a torok.ing account, songs can sync to all of your devices. You can listen to your music on your phone, tablet, laptop, or whatever device you might be using.</p>
+        <h3>Fullscreen player</h3>
+        <p>Use Skiby's built in fullscreen player to display songs on the big screen. You can customize each song's fullscreen background, from images to videos.</p>
+        <h3>One miniplayer, many sizes</h3>
+        <p>You may leave the tab, but the miniplayer doesn't leave you. Resize it however you'd like: tall, square, skinny, wide, or anything else. The content automatically adapts to your preference. <em>Coming soon</em></p>
+        <h3>And everything else you'd expect</h3>
+        <p>Shuffle, repeat, manual queue, Media Session API, IndexedDB, customization...</p>
+        <hr>
+        <h2>Interested?</h2>
+        <button onclick="window.location.href = 'https:\/\/torok.ing/songplayer/MusicPlayernew.html'">Open App</button>
+    </div>
+    <div id="onlineSection" class="section hidden" style="padding:20px;">
+        <h1>FAQ</h1>
+        <h2>Is there a limit to the amount of songs I can add?</h2>
+        <p>There is no limit to the amount of songs you can add to your library on your local device. However, if you choose to sync your songs to the cloud, there is a storage limit of 15gb, which is around ~5k mp3s. Both songs and track art contribute to the limit.</p>
+        <h2>What do the icons next to the artist mean?</h2>
+        <p><img class="svgicon" src="https://torok.ing/songplayer/icons/online.svg">: The song is on the server and not on your device. You will only be able to listen to this track with an Internet connection.</p>
+        <p><img class="svgicon" src="https://torok.ing/songplayer/icons/file.svg">: The song is from a file on your device. You will be able to play this track both online and offline, but other devices signed into your account will not be able to access it. If the original track file on your device is deleted, the song will become inaccessible.</p>
+        <p><img class="svgicon" src="https://torok.ing/songplayer/icons/local.svg">: The song is on the server and was downloaded to your device. You will be able to play this track both online and offline. If the browser database is cleared, you will need to redownload the track online.</p>
+        <p><img class="svgicon" src="https://torok.ing/songplayer/icons/uploaded.svg">: The song is from a file on your device and was uploaded to the server. You will be able to play this track both online and offline. If the original track file on your device is deleted, you will need to redownload the track online.</p>
+        
+    </div>
+</body>
+<script>
+$=(id)=>document.getElementById(id);
+
+const homeMode=$('homeMode');
+const onlineMode=$('onlineMode');
+const openAppButton=$('openAppButton');
+const homeSection=$('homeSection');
+const onlineSection=$('onlineSection');
+
+function switchMode(mode,id) {
+    homeMode.classList.toggle('active', mode === 'Home');
+    onlineMode.classList.toggle('active', mode === 'Library');
+    homeSection.classList.toggle('hidden', mode === 'Library');
+	onlineSection.classList.toggle('hidden', mode === 'Home');
+    if (id) selectPlaylist(id)
+}
+
+homeMode.onclick=()=>switchMode('Home');
+onlineMode.onclick=()=>switchMode('Library');
+
+openAppButton.onclick=()=>window.location.href='https://torok.ing/songplayer/MusicPlayernew.html';
+
+AccountInjection.inject($('navRight'))
+</script>
+</html>

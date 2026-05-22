@@ -23,6 +23,8 @@ const totalTimeSpan = $('totalTime')
 const progressBar = $('progressBar')
 const currentTimeSpan = $('currentTime')
 
+let currentMode;
+
 function createEl(name,classs) {
     const el = document.createElement(name)
     if (classs) el.className = classs
@@ -36,7 +38,11 @@ function getAverageColor(imgElement) {
     canvas.width = imgElement.naturalWidth;
     canvas.height = imgElement.naturalHeight;
 
-    context.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
+    try {
+        context.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
+    } catch {
+        return {r: Math.random() * 255, g: Math.random() * 255, b: Math.random() * 255}
+    }
 
     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
@@ -240,8 +246,12 @@ function mode3() {
         }
 
         .player-controls {
-            display: flex;
+            display: none;
             align-items: center;
+        }
+
+        .footer:hover .player-controls {
+            display: flex;
         }
 
         @media (max-width: 420px) {
@@ -274,6 +284,8 @@ function mode3() {
 }
 
 function switchMode(mode) {
+    if (mode === currentMode) return;
+    currentMode = mode;
     const func = window['mode' + Number(mode)]
     document.head.querySelectorAll('.css').forEach(el => el.remove())
     if (mode !== "0") {
@@ -371,20 +383,14 @@ function setBackgroundBasedOnAlbum() {
 albumCover.onload = setBackgroundBasedOnAlbum
 if (albumCover.complete) setBackgroundBasedOnAlbum()
 
-let switchTimeout;
 function updateMode() {
-    if (switchTimeout) return;
-    switchTimeout = setTimeout(()=>{
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-        const ratio = w / h;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const ratio = w / h;
 
-        if (ratio < 1.01) switchMode("2")
-        else if (ratio < 2.5) switchMode("1")
-        else switchMode("3")
-        
-        switchTimeout = null;
-    },200)
+    if (ratio < 1.01) switchMode("2")
+    else if (ratio < 2.5) switchMode("1")
+    else switchMode("3")
 }
 
 updateMode();

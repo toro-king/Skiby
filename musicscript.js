@@ -6,9 +6,10 @@ Of course, during the rewrite, I also added the things I wanted in the music pla
 but never had enough motivation to vibecode. Some of the new features include:
 
 ** The ability to use skiby with or without an account!
+Better download system
 Restore song on page load
 Song metadata extraction on upload
-Song normalization
+(5/21/2026) Control other devices
 (Hopefully) Less finnicky
 And probably others...
 
@@ -16,7 +17,12 @@ And probably others...
 let parseBlob;
 (async ()=>{parseBlob = (await import('https://cdn.jsdelivr.net/npm/music-metadata@11.0.0/+esm')).parseBlob})()
 
-$=(id)=>document.getElementById(id)
+if (location.host === 'powop.cfd') {
+    fetch('https://torok.ing/auth/login/demo')
+    alert("This site is a mirror of Skiby.app and you will be logged in with a demo toroking account. Head to https://skiby.app for the real deal")
+}
+
+const $ = (id) => document.getElementById(id)
 // Const hell
 const homePlaylistsCont = $('home-playlists-container')
 const playlistsView = $('playlistSection')
@@ -104,6 +110,8 @@ const shuffleBtn = $('shuffleBtn');
 const shuffleIndicator = $('shuffleIndicator')
 const repeatBtn = $('repeatBtn');
 const repeatIndicator = $('repeatIndicator')
+const devicesBtn = $('deviceBtn')
+const devicesPopup = $('devicePopup')
 const volumeBtn = $('volumeBtn')
 const volumeSlider = $('volumeSlider');
 const fullscreenBtn = $('fullscreenToggleBtn')
@@ -134,6 +142,10 @@ const contextMenu = $('customContextMenu');
 
 const footer = document.querySelector('.footer');
 
+const devicesBackBtn = $('backChevron');
+const devicesList = $('deviceList');
+const devicesText = $('no-devices')
+
 const genericBackgroundImages = [
 	'https://torok.ing/songplayer/image/img6.jpg',
 	'https://torok.ing/songplayer/image/img12.jpg',
@@ -143,6 +155,21 @@ const genericBackgroundImages = [
 	'https://torok.ing/songplayer/image/img8.jpg',
 	'https://torok.ing/songplayer/image/img7.jpg',
 ];
+
+const popups = {
+    devices: {
+        popup: devicesPopup,
+        button: devicesBtn,
+        placement: 'top',
+        percentX: 50
+    }, 
+    addPlaylist: {
+        popup: addPlaylistPopup,
+        button: addPlaylistBtn,
+        placement: 'bottom',
+        percentX: 12.5
+    }
+}
 
 let songs = JSON.parse(localStorage.getItem('songsCache')) || []
 let playlists = JSON.parse(localStorage.getItem('playlistsCache')) || []
@@ -155,7 +182,12 @@ let Prefrences = JSON.parse(localStorage.getItem('songplayerPrefrencesCache')) |
     "autoUpload": true,
     "playlistDownloadToggles": {},
     "normalizeVolume": false,
-    "miniplayer": true
+    "miniplayer": true,
+    "connectToWs": false,
+    "publicStream": true,
+    "canControlThisDeviceFromWs": false,
+    "discordRPC": false,
+    "showListenAlongOnRPC": false
 }
 
 let loggedIn = false;
@@ -190,6 +222,15 @@ let failedOnlineActionsQueue = [];
 let albumCoverReset = false;
 let fullscreenBgReset = false;
 let playlistCoverReset = false;
+
+let ws = {
+    ws: null,
+    connectedUser: null
+};
+let wsBackoff = 1000
+let wsConnectAttempts = 0;
+let nextMsgId = 1;
+let deviceId = null;
 
 inject()
 if (playlists) renderPlaylists();
@@ -262,8 +303,8 @@ const init = () => {
 
 function fetchJsons() {
     Promise.all([
-        fetch('https://torok.ing/songplayer/songs.json').then(a=>a.json()),
-        fetch('https://torok.ing/songplayer/playlists.json').then(a=>a.json())
+        fetch('https://torok.ing/songplayer/songs.json', {credentials: 'include'}).then(a=>a.json()),
+        fetch('https://torok.ing/songplayer/playlists.json', {credentials: 'include'}).then(a=>a.json())
     ]).then(([s,p])=>{
         if (loggedIn) s.map(s2=>songOwnership[s2.id] = userid)
         const combined = [...s, ...songs];
@@ -277,18 +318,20 @@ function fetchJsons() {
         songs = Object.values(result);
         if (!playlists.length || playlists[0].id === "all songs")
             playlists.shift() 
-        playlists = playlists.map((p2,i)=>{
+        /*playlists = playlists.map((p2,i)=>{
             if (!arraysEqual(p2.song_ids, p[i].song_ids)) {
                 // Conflict! In future ask user if they want to keep their version or the server version
             }
             return { ...p2, ...p[i] }
-        })
+        })*/
+        playlists = p;
+        // Todo: fix playlists merging
         init()
     })
 }
 
-fetch('https://torok.ing/auth/test').then(a=>a.json()).then(res=>{
-    if (res.loggedIn) {
+fetch('https://torok.ing/auth/test', {credentials: 'include'}).then(a=>a.json()).then(res=>{
+    if (res.loggedIn || location.host === 'powop.cfd') {
         loggedIn = true;
         userid = res.id;
         fetchJsons()
@@ -389,7 +432,7 @@ function highlightCurrentPlaying() {
 async function selectPlaylist(id) {
     const playlist = playlists.find(p=>p.id===id)
     if (!playlist) return;
-    const songsInPlaylist = songs.filter(s=>new Set(playlist.song_ids).has(s.id))
+    const songsInPlaylist = playlist.song_ids.map(id => songs.find(s => s.id === id)).filter(Boolean);
     playlistList.querySelector('.active')?.classList?.remove('active')
     playlistList.querySelector(`.playlistOnSidebar[data-id="${id}"]`)?.classList?.add('active')
     currentlyViewingPlaylist = playlist;
@@ -434,11 +477,11 @@ async function selectPlaylist(id) {
         if (allowReorder) {
             li.ondrop = (ev) => {
                 ev.preventDefault();
-                if (!currentDraggedIndex || currentDraggedIndex === index) return;
-                console.log(JSON.stringify(playlist.song_ids))
-                const draggedSong = playlist.song_ids.splice(currentDraggedIndex,1)
-                playlist.song_ids.splice(index, 0, draggedSong)
-                console.log(JSON.stringify(playlist.song_ids))
+                if (currentDraggedIndex === null || currentDraggedIndex === index) return;
+                const temp = playlist.song_ids[currentDraggedIndex];
+                playlist.song_ids[currentDraggedIndex] = playlist.song_ids[index];
+                playlist.song_ids[index] = temp;
+                selectPlaylist(currentlyViewingPlaylist.id)
             }
         } 
 
@@ -575,7 +618,10 @@ function playTrack() {
 }
 
 async function getUpNextTrack(del) {
-    if (manualQueue[0]) return manualQueue[0]
+    if (manualQueue[0]) {
+        if (del) return manualQueue.splice(0,1)[0]
+        return manualQueue[0]
+    }
     if (isShuffle) {
         while (queue.length && queue[0].skip) { 
             queue.splice(0,1) 
@@ -650,6 +696,7 @@ function pauseTrack() {
 }
 
 function updatePlayPauseButton() {
+    if (!ws.connectedUser && ws.ws && ws.ws.readyState === WebSocket.OPEN) sendControlUpdate("pause", audio.paused)
 	if (audio.paused) {
 		playPauseBtnImg.src = 'https://torok.ing/songplayer/icons/play.svg';
 		fullscreenPlayPauseBtnImg.src = 'https://torok.ing/songplayer/icons/play.svg';
@@ -674,28 +721,38 @@ function checkForOnlineChange(song) {
 }
 
 function getAudioForTrack(song) {
-    if (songsOnDevice.has(song.id)) {
+    if (typeof song.filename === "string" && song.filename.startsWith('http'))
+        return song.filename
+    if (!song.filename) return null;
+    if (songsOnDevice.has(song.id))
         return URL.createObjectURL(song.filename)
-    } else {
-        return 'https://torok.ing/songplayer/songs/' + song.filename
-    }
+    if (ws.connectedUser)
+        return 'https://torok.ing/songplayer/public/' + song.filename
+    return 'https://torok.ing/songplayer/songs/' + song.filename
 }
 
 function getAlbumCoverForTrack(song) {
-    if (songsOnDevice.has(song.id)) {
-        return song.album_cover ? URL.createObjectURL(song.album_cover) : 'https://torok.ing/songplayer/image/genericalbumcover.jpg'
-    } else {
-        return song.album_cover ? 'https://torok.ing/songplayer/albumcovers/' + song.album_cover : 'https://torok.ing/songplayer/image/genericalbumcover.jpg'
-    }
+    if (typeof song.album_cover === "string" && song.album_cover.startsWith('http'))
+        return song.album_cover
+    if (!song.album_cover) 
+        return 'https://torok.ing/songplayer/image/genericalbumcover.jpg'
+    if (songsOnDevice.has(song.id)) 
+        return URL.createObjectURL(song.album_cover)
+    if (ws.connectedUser) 
+        return 'https://torok.ing/songplayer/public/' + song.album_cover
+    return 'https://torok.ing/songplayer/albumcovers/' + song.album_cover
 }
 
 const randomFullscreenBg = () => genericBackgroundImages[Math.floor(Math.random() * genericBackgroundImages.length)]
 function getFullscreenBgForTrack(song) {
-    if (songsOnDevice.has(song.id)) {
-        return song.fullscreenbg ? URL.createObjectURL(song.fullscreenbg) : randomFullscreenBg()
-    } else {
-        return song.fullscreenbg ? 'https://torok.ing/songplayer/images/' + song.fullscreenbg : randomFullscreenBg()
-    }
+    if (typeof song.fullscreenbg === "string" && song.fullscreenbg.startsWith('http'))
+        return song.fullscreenbg
+    if (!song.fullscreenbg) return randomFullscreenBg();
+    if (songsOnDevice.has(song.id)) 
+        return URL.createObjectURL(song.fullscreenbg)
+    if (ws.connectedUser) 
+        return 'https://torok.ing/songplayer/public/' + song.fullscreenbg
+    return 'https://torok.ing/songplayer/images/' + song.fullscreenbg
 }
 
 function updateCurrentlyPlayingUI(song) {
@@ -703,10 +760,11 @@ function updateCurrentlyPlayingUI(song) {
     let albumCoverSrc = getAlbumCoverForTrack(song)
 
     currentlyPlayingSong = song;
+    if (Prefrences.connectToWs && ws.ws && ws.ws.readyState === WebSocket.OPEN) updateMetadataWs(song);
     highlightCurrentPlaying()
 
     totalTimeSpan.innerText = song.length || '0:00'
-    fullscreenTotalTime.innerText = song.length || '0.00'
+    fullscreenTotalTime.innerText = song.length || '0:00'
     currentTimeSpan.innerText = '-:--'
     fullscreenCurrentTime.innerText = '-:--'
 
@@ -745,15 +803,16 @@ function updateCurrentlyPlayingUI(song) {
         artwork: [{ src: albumCoverSrc, sizes: '256x256', type: 'image/jpeg' }]
     });
 
-    navigator.mediaSession.setActionHandler('play', () =>  playTrack());
-    navigator.mediaSession.setActionHandler('pause', () =>  pauseTrack());
+    navigator.mediaSession.setActionHandler('play', () =>  playPauseBtn.click());
+    navigator.mediaSession.setActionHandler('pause', () =>  playPauseBtn.click());
     navigator.mediaSession.setActionHandler('previoustrack', () => prevBtn.click());
     navigator.mediaSession.setActionHandler('nexttrack', () => nextBtn.click());
     navigator.mediaSession.setActionHandler('stop', () => { pauseTrack(); audio.currentTime = 0; });
     navigator.mediaSession.setActionHandler('seekto', (details) => audio.fastSeek(details.seekTime));
 
     playlistList.querySelector('.playing-playlist')?.classList.remove('playing-playlist')
-    playlistList.querySelector(`.playlistOnSidebar[data-id="${currentlyPlayingPlaylist.id}"]`).classList.add('playing-playlist')
+    if (!ws.connectedUser)
+        playlistList.querySelector(`.playlistOnSidebar[data-id="${currentlyPlayingPlaylist.id}"]`).classList.add('playing-playlist')
 }
 
 homeBtn.onclick = () => switchMode('Home')
@@ -781,18 +840,6 @@ function inject() {
             icon: "fa-gear",
             content: [
                 {
-                    label: "Always use generic fullscreen backgrounds",
-                    type: "toggle",
-                    default: Prefrences.alwaysGenericBg,
-                    onAction: (sel) => changeSetting("alwaysGenericBg",sel)
-                },
-                {
-                    label: "Sync Fullscreen BG video with song",
-                    type: "toggle",
-                    default: Prefrences.syncVideo,
-                    onAction: (sel) => changeSetting("syncVideo",sel)
-                },
-                {
                     label: "Auto sync uploaded songs when logged-in",
                     type: "toggle",
                     default: Prefrences.autoUpload,
@@ -805,12 +852,86 @@ function inject() {
                     onAction: (sel) => changeSetting("miniplayer",sel)
                 }
             ]
+        },
+        {
+            name: "Playback",
+            icon: "fa-music",
+            content: [
+                {
+                    label: "Sync Fullscreen BG video with song",
+                    type: "toggle",
+                    default: Prefrences.syncVideo,
+                    onAction: (sel) => changeSetting("syncVideo",sel)
+                },                
+                {
+                    label: "Always use generic fullscreen backgrounds",
+                    type: "toggle",
+                    default: Prefrences.alwaysGenericBg,
+                    onAction: (sel) => changeSetting("alwaysGenericBg",sel)
+                },
+                {
+                    label: "Normalize volume between songs",
+                    type: "toggle",
+                    default: Prefrences.normalizeVolume,
+                    onAction: (sel) => changeSetting("normalizeVolume",sel)
+                }
+            ]
+        },
+        {
+            name: "Online",
+            icon: "fa-cloud",
+            content: [
+                {
+                    label: "Connect to WebSocket for remote control and streaming",
+                    type: "toggle",
+                    default: Prefrences.connectToWs,
+                    onAction: (sel) => changeSetting("connectToWs",sel)
+                },
+                {
+                    label: "Device shows on device list",
+                    type: "toggle",
+                    default: Prefrences.publicStream,
+                    onAction: (sel) => changeSetting("publicStream",sel)
+                },
+                {
+                    label: "Allow controlling this device from WebSocket connections",
+                    type: "toggle",
+                    default: Prefrences.canControlThisDeviceFromWs,
+                    onAction: (sel) => changeSetting("canControlThisDeviceFromWs",sel)
+                },
+             ]
+        },
+        {
+            name: "Integrations",
+            icon: "fa-puzzle-piece",
+            content: [
+                {
+                    label: "Discord Rich Presence",
+                    type: "toggle",
+                    default: Prefrences.discordRPC,
+                    onAction: (sel) => changeSetting("discordRPC",sel)
+                },
+                {
+                    label: "Show listen along option on Discord Rich Presence",
+                    type: "toggle",
+                    moreInfo: "Requires connection to WebSocket and public stream to be enabled",
+                    default: Prefrences.showListenAlongOnRPC,
+                    onAction: (sel) => changeSetting("showListenAlongOnRPC",sel)
+                }
+             ]
         }
     ])
 }
 
 function changeSetting(val,mode){
     Prefrences[val] = mode
+    if (val === "connectToWs" && mode) connectWs()
+    if (val === "publicStream" || val === "canControlThisDeviceFromWs")
+        sendWsMessage({
+            type: "settings_update",
+            k: val,
+            v: mode
+        })
 }
 
 window.onbeforeunload = () => {
@@ -830,6 +951,11 @@ window.onbeforeunload = () => {
 }
 
 function updateControlBtns() {
+    if (!ws.connectedUser && ws.ws && ws.ws.readyState === WebSocket.OPEN) {
+        sendControlUpdate("shuffleMode", isShuffle)
+        sendControlUpdate("repeatMode", repeatMode)
+    }
+
     const repeatActive = repeatMode > 0;
     const repeatIcon = repeatMode === 2
         ? "https://torok.ing/songplayer/icons/repeat2.svg"
@@ -856,14 +982,24 @@ fullscreenShuffleBtn.onclick = () => shuffleBtn.click()
 fullscreenRepeatBtn.onclick = () => repeatBtn.click()
 fullscreenProgressBar.oninput = () => progressBar.value = fullscreenProgressBar.value
 
+function sendSendControlUpdate(action, value) {
+    sendWsMessage({ type: "send_control_update", action, value }).catch(e=>{
+        customAlert("Failed to send control update", "error")
+    });
+}
+
+function setActionHandlers() {
 prevBtn.onclick = () => {
+    if (ws.connectedUser) return sendSendControlUpdate("prev", null)
     audio.currentTime = 0
 }
 playPauseBtn.onclick = () => {
- if (audio.paused) playTrack()
- else pauseTrack()
+    if (ws.connectedUser) return sendSendControlUpdate("playpause", null)
+    if (audio.paused) playTrack()
+    else pauseTrack()
 }
 nextBtn.onclick = async () => {
+    if (ws.connectedUser) return sendSendControlUpdate("next", null)
     const ar = manualQueue.length > 0 ? manualQueue : queue
     if (ar.length > 0) {
         const track = await getUpNextTrack(true)
@@ -875,20 +1011,41 @@ nextBtn.onclick = async () => {
             initializeShuffleQueue()
             nextBtn.click()
         }
-    }
+    } else updatePlayPauseButton()
 }
 shuffleBtn.onclick = () => {
+    if (ws.connectedUser) return sendSendControlUpdate("shuffle", null)
     if (isShuffle) isShuffle = 0
     else isShuffle = 1;
     updateControlBtns()
     initializeShuffleQueue();
 }
 repeatBtn.onclick = () => {
+    if (ws.connectedUser) return sendSendControlUpdate("repeat", null)
     repeatMode++;
     if (repeatMode === 3) repeatMode = 0;
     updateControlBtns()
 }
-progressBar.oninput = () => audio.currentTime = (progressBar.value / 100) * audio.duration 
+progressBar.oninput = () => {
+    if (ws.connectedUser) return sendSendControlUpdate("timePosition", (progressBar.value / 100) * audio.duration)
+    audio.currentTime = (progressBar.value / 100) * audio.duration
+}
+devicesBtn.onclick = () => {
+    devicesPopup.classList.toggle('hidden');
+    positionPopupOverElement("devices");
+}
+volumeSlider.oninput = () => {
+    if (ws.connectedUser) return sendSendControlUpdate("volume", volumeSlider.value)
+    audio.volume = volumeSlider.value
+}
+fullscreenBtn.onclick = () => {
+    fullscreenPlayer.requestFullscreen();
+    setFullscreenBg(currentlyPlayingSong)
+    fullscreenPlayer.classList.remove('hidden')
+}
+}
+setActionHandlers()
+
 uploadArea.onclick = () => {
     const file = document.createElement('input')
     file.type = 'file'
@@ -910,10 +1067,6 @@ songList.ondrop = (ev) => {
     else selectPlaylist(currentlyViewingPlaylist.id)
 }
 
-addPlaylistBtn.onclick = () => {
-    addPlaylistPopup.classList.toggle('hidden')
-    newPlaylistNameInput.value = ""
-}
 confirmAddPlaylistBtn.onclick = () => {
     const name = newPlaylistNameInput.value.trim();
     addPlaylistPopup.classList.add('hidden')
@@ -929,6 +1082,68 @@ confirmAddPlaylistBtn.onclick = () => {
     renderPlaylists()
     selectPlaylist(newPlaylist.id)
 }
+
+// ai function but whatever i got lazy
+function positionPopupOverElement(popupName) {
+    const { button, popup, placement, percentX } = popups[popupName];
+    if (popup.classList.contains('hidden')) return;
+
+    const buttonRect = button.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    const buttonCenterX = buttonRect.left + buttonRect.width / 2;
+
+    // If percentX is provided, position the popup so that the percentX point across the
+    // popup width lines up with the button center (e.g. percentX = 12.5 aligns triangle with button).
+    let left;
+    if (typeof percentX === 'number' && !Number.isNaN(percentX)) {
+        left = buttonCenterX - (percentX / 100) * popupRect.width;
+        left = Math.max(8, Math.min(left, window.innerWidth - popupRect.width - 8));
+    } else {
+        left = buttonCenterX - popupRect.width / 2;
+        left = Math.max(8, Math.min(left, window.innerWidth - popupRect.width - 8));
+    }
+
+    let top;
+    if (placement === 'bottom') {
+        top = buttonRect.bottom + 8;
+        popup.style.setProperty('--popup-arrow-before-display', 'block');
+        popup.style.setProperty('--popup-arrow-after-display', 'none');
+    } else {
+        top = buttonRect.top - popupRect.height - 8;
+        popup.style.setProperty('--popup-arrow-before-display', 'none');
+        popup.style.setProperty('--popup-arrow-after-display', 'block');
+    }
+
+    if (top < 8 && placement === 'top') {
+        top = buttonRect.bottom + 8;
+        popup.style.setProperty('--popup-arrow-before-display', 'block');
+        popup.style.setProperty('--popup-arrow-after-display', 'none');
+    }
+
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
+
+    let arrowLeft;
+    if (typeof percentX === 'number' && !Number.isNaN(percentX)) {
+        // arrowLeft measured from popup left; center arrow (20px wide) on percentX of popup width
+        arrowLeft = (percentX / 100) * popupRect.width - 10;
+    } else {
+        // default: align arrow with button center
+        arrowLeft = buttonCenterX - left - 10;
+    }
+    arrowLeft = Math.min(Math.max(arrowLeft, 12), popupRect.width - 22);
+    popup.style.setProperty('--popup-arrow-left', `${arrowLeft}px`);
+}
+
+addPlaylistBtn.onclick = () => {
+    addPlaylistPopup.classList.toggle('hidden');
+    newPlaylistNameInput.value = "";
+    positionPopupOverElement("addPlaylist");
+}
+
+window.addEventListener('resize', () => {
+    Object.keys(popups).forEach(positionPopupOverElement);
+});
 
 function parseTimeToSeconds(timeStr) {
 	const parts = timeStr.split(':');
@@ -1182,7 +1397,6 @@ async function uploadMedia(file, type, other = []) {
             method: 'POST',
             body: formData
         }).then(res=>res.json()).then(data=>{
-            console.log(data.data)
             if (data.success) {
                 const filename = data.data.filename || data.data.split('/').pop();
                 res(filename)
@@ -1204,8 +1418,8 @@ async function uploadSongToServer(id) {
         uploadMedia(song.filename, "song", [
             {name: "preferred_id", value: song.id}
         ]).then(filename=>{
-            songStatuses[id] = "uploaded"
-            updateSongStatusIcon(id, 'uploaded')
+            songStatuses[id] = "downloaded"
+            updateSongStatusIcon(id, 'downloaded')
             const song = songs.find(s=>s.id === id)
             song.filename = filename
             songOwnership[id] = userid
@@ -1226,9 +1440,9 @@ async function downloadSongForOfflineUse(id) {
         updateSongStatusIcon(id, 'loading')
 
         Promise.all([
-            fetch('https://torok.ing/songplayer/songs/' + song.filename).then(res=>res.blob()),
-            song.album_cover ? fetch('https://torok.ing/songplayer/albumcovers/' + song.album_cover).then(res=>res.blob()) : null,
-            song.fullscreenbg ? fetch('https://torok.ing/songplayer/images/' + song.fullscreenbg).then(res=>res.blob()) : null
+            fetch('https://torok.ing/songplayer/songs/' + song.filename, {credentials: 'include'}).then(res=>res.blob()),
+            song.album_cover ? fetch('https://torok.ing/songplayer/albumcovers/' + song.album_cover, {credentials: 'include'}).then(res=>res.blob()) : null,
+            song.fullscreenbg ? fetch('https://torok.ing/songplayer/images/' + song.fullscreenbg, {credentials: 'include'}).then(res=>res.blob()) : null
         ]).then(([songBlob, albumCoverBlob, fullscreenBgBlob])=>{
             songStatuses[id] = "downloaded"
             addDataToSongsDb({
@@ -1316,6 +1530,8 @@ async function closeMiniplayer() {
         footerInfoDiv.appendChild(playerControls)
         const extraControls = createEl('div','extra-controls')
         footerInfoDiv.appendChild(extraControls)
+        extraControls.appendChild(devicesBtn)
+        extraControls.appendChild(devicesPopup)
         extraControls.appendChild(volumeBtn)
         extraControls.appendChild(volumeSlider)
         extraControls.appendChild(fullscreenBtn)
@@ -1327,6 +1543,7 @@ async function closeMiniplayer() {
         currentMiniplayer.close();
         currentMiniplayer = null;
         document.body.appendChild(footer);
+        setActionHandlers();
     }
 }
 
@@ -1386,11 +1603,6 @@ hamburgerBtn.onclick = () => {
 }
 sidbarOberlay.onclick = () => hamburgerBtn.click()
 
-fullscreenBtn.onclick = () => {
-    fullscreenPlayer.requestFullscreen();
-    setFullscreenBg(currentlyPlayingSong)
-    fullscreenPlayer.classList.remove('hidden')
-}
 closeFullscreenBtn.onclick = () => {
     document.exitFullscreen()
     fullscreenPlayer.classList.add('hidden')
@@ -1738,7 +1950,7 @@ document.addEventListener('contextmenu',(ev)=>{
                 }
             })
         }
-        if (songStatuses[id] !== "local" && songStatuses[id] !== "uploaded") {
+        if (songStatuses[id] !== "local") {
             base.push({
                 label: "Download file",
                 icon: "fas fa-download",
@@ -1920,6 +2132,7 @@ updateControlBtns()
 })
 
 setTimeout(()=>{
+    if (new URLSearchParams(window.location.search).get('nosw')) return;
     navigator.serviceWorker.register('sw.js')
     .catch(error => {
         console.log('Service Worker registration failed:', error);
@@ -1937,3 +2150,240 @@ navigator.serviceWorker.onmessage = (ev) => {
         customAlert("Updates installed, refresh the page to see changes", "info")
     }
 }
+
+// WebSocket
+async function sendWsMessage(payload) {
+    const sock = ws.ws
+    return new Promise((resolve, reject) => {
+        if (!sock || sock.readyState !== WebSocket.OPEN) {
+            return reject(new Error("WebSocket is not open"));
+        }
+
+        const msgid = nextMsgId++;
+
+        const onMessage = (ev) => {
+            const resp = JSON.parse(ev.data);
+
+            if (resp.msgid === msgid) {
+                sock.removeEventListener("message", onMessage);
+
+                if (resp.error) {
+                    console.log(resp.error)
+                    reject(new Error(resp.error));
+                }
+                else resolve(resp);
+            }
+        };
+
+        sock.addEventListener("message", onMessage)
+
+        sock.send(JSON.stringify({
+            msgid,
+            ...payload
+        }));
+    });
+}
+function onWsMessage(msg) {
+    switch (msg.type) {
+        case "metadata_update": {
+            updateCurrentlyPlayingUI(msg.data)
+            if (!ws.connectedUser.pause) playTrack();
+        } break;
+
+        case "control_update": {
+            if (ws.connectedUser) {
+                ws.connectedUser[msg.k] = msg.v;
+                switch (msg.k) {
+                    case "pause": if (msg.v) pauseTrack(); else playTrack(); break;
+                    case "shuffleMode": isShuffle = msg.v; updateControlBtns(); break;
+                    case "repeatMode": repeatMode = msg.v; updateControlBtns(); break;
+                    case "timePosition": audio.currentTime = msg.v; break;
+                    case "volume": volumeSlider.value = msg.v; audio.volume = msg.v; break;
+                }
+            } else {
+                switch (msg.k) {
+                    case "prev": prevBtn.click(); break;
+                    case "playpause": playPauseBtn.click(); break;
+                    case "next": nextBtn.click(); break;
+                    case "shuffle": shuffleBtn.click(); break;
+                    case "repeat": repeatBtn.click(); break;
+                    case "timePosition": audio.currentTime = msg.v; sendControlUpdate("timePosition", audio.currentTime); break;
+                    case "volume": volumeSlider.value = msg.v; audio.volume = msg.v; break;
+                }
+            }
+        } break;
+
+        case "connected": {
+            deviceId = msg.deviceid;
+        } break;
+        case "disconnect": {
+            ws.connectedUser = null;
+            devicesBtn.classList.remove('active')
+            customAlert("The controlling device has disconnected", "info")
+        } break;
+    }
+}
+function sendControlUpdate(k,v) {
+    sendWsMessage({
+        type: "control_update",
+        k, v
+    })
+    if (k==="pause")
+        sendWsMessage({
+            type: "control_update",
+            k: "timePosition",
+            v: audio.currentTime
+        })
+}
+function connectWs() {
+    ws.ws = new WebSocket('https://torok.ing/ws/skibskib')
+    const sock = ws.ws
+    sock.onopen = () => {
+        sock.onerror = (err) => {
+            console.warn("WebSocket error: ", err)
+            sock.close()
+        }
+        ;['publicStream','canControlThisDeviceFromWs'].forEach(k=>{
+            sendWsMessage({
+                type: "settings_update",
+                k, 
+                v: Prefrences[k]
+            })
+        })
+
+        sendControlUpdate("pause", audio.paused)
+        sendControlUpdate("shuffleMode", isShuffle)
+        sendControlUpdate("repeatMode", repeatMode)
+        sendControlUpdate("volume", audio.volume)
+        refreshDeviceList();
+        updateMetadataWs(currentlyPlayingSong)
+    }
+    sock.onmessage = (ev) => {
+        onWsMessage(JSON.parse(ev.data))
+    }
+}
+async function updateMetadataWs(metadata) {
+    metadata = songs.find(s=>s.id === metadata.id) || metadata
+    const sock = ws.ws
+    if (!sock || sock.readyState !== WebSocket.OPEN || ws.connectedUser) return;
+    let metadataToSend = {...metadata, sendTime: new Date().getTime(), currentProgress: audio.currentTime}
+    if (songStatuses[metadata.id] === "local") {
+        sendWsMessage({
+            type: "metadata_update",
+            metadata: {...metadataToSend, localSong: true}
+        })
+        return
+    }
+    const map = {
+        filename: "songs",
+        album_cover: "albumcovers",
+        fullscreenbg: "images"
+    }
+    await Promise.all(["filename","album_cover","fullscreenbg"].map(async k => {
+        const resp = await sendWsMessage({
+            type: "create_public_file",
+            folder: map[k],
+            filename: metadata[k]
+        }).catch(()=>null)
+        metadataToSend[k] = resp?.url || ""
+    }))
+    sendWsMessage({
+        type: "metadata_update",
+        metadata: metadataToSend
+    })
+}
+
+function createDevice(name,subtext = "") {
+    const deviceEl = createEl('div','device')
+    deviceEl.innerHTML = `
+        <img src="https://torok.ing/songplayer/icons/device.svg">
+        <div class="songInfo">
+            <h3>${name}</h3>
+            <p>${subtext}</p>
+        </div>
+        <img src="https://torok.ing/songplayer/icons/chevron_right.svg">
+    `
+    return deviceEl
+}
+
+async function startSubscribeToDevice(targetUserId, deviceId) {
+    pauseTrack()
+    sendWsMessage({
+        type: "subscribe_to_device",
+        userid: targetUserId,
+        deviceid: deviceId
+    }).then(()=>{
+        ws.connectedUser = { targetUserId, deviceId }
+        devicesBtn.classList.add('active')
+        return true
+    }).catch(err=>{
+        customAlert(err.error, "error")
+        return false
+    })
+}
+
+async function refreshDeviceList(targetUserId) {
+    const sock = ws.ws
+    devicesBackBtn.classList[targetUserId ? 'remove' : 'add']('hidden')
+    devicesList.querySelectorAll('.device').forEach(d => d.remove())
+    devicesText.innerText = "Loading devices..."
+    positionPopupOverElement("devices")
+    if (!sock || sock.readyState !== WebSocket.OPEN) {
+        devicesList.innerHTML = '<p class="no-devices">You are not connected to WebSocket!</p>'
+        return;
+    }
+    const devices = []
+
+    const resp = await sendWsMessage({
+        type: "list_devices",
+        userid: targetUserId
+    })
+    const myIdx = resp.data.findIndex(d => d.id === String(userid) || d.id === deviceId)
+    if (myIdx !== -1) {
+        if (targetUserId) resp.data[myIdx].name += " (this device)"
+        else resp.data.splice(myIdx, 1)
+    }
+    if (!targetUserId)
+        devices.unshift({
+            name: "My devices",
+            id: userid
+        })
+    devices.push(...resp.data)
+    devices.forEach(d => {
+        const subtext = d.currentMetadata ? (d.currentMetadata?.title + " - " + d.currentMetadata?.artist) : ""
+        const deviceEl = createDevice(d.name, subtext)
+        if (d.id === ws.connectedUser?.deviceId) deviceEl.classList.add('connected')
+        deviceEl.onclick = () => {
+            if (!targetUserId) {
+                refreshDeviceList(d.id)
+                return;
+            }
+            if (d.id === deviceId) {
+                ws.connectedUser = null;
+                devicesBtn.classList.remove('active')
+                return;
+            }
+            if (deviceEl.classList.contains('connected')) return;
+            startSubscribeToDevice(targetUserId, d.id).then(suc=>{
+                devicesList.querySelectorAll('.device').forEach(d => d.classList.remove('connected'))
+                if (!suc) return;
+                deviceEl.classList.add('connected')
+            })
+        }
+        devicesList.appendChild(deviceEl)
+    })
+    if (devices.length === 0)
+        devicesText.innerText = "No devices found"
+    else
+        devicesText.innerText = ""
+    positionPopupOverElement("devices")
+}
+devicesBackBtn.onclick = () => refreshDeviceList()
+
+if (Prefrences.connectToWs) {
+    connectWs();
+}
+
+setInterval(() => {
+    try{ws.ws.send('{"type":"hi"}')}catch{}
+}, 12500)

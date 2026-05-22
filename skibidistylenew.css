@@ -2,7 +2,8 @@
 /* Playlist Header Styling */
 
 .footerInfoDiv {
-  display:flex;flex-grow:1
+  display:flex;flex-grow:1;
+  max-width: 100%;
 }
 
 .song-art-previews {
@@ -1949,26 +1950,46 @@ li.disabled-offline {
 	border-bottom: none;
 }
 
-#addPlaylistPopup {
-  position: absolute;
-  background: white;
-  color: black;
-  padding: 12px 16px;
-  border-radius: 10px;
-  left:186px;
-  top:64px;
-  z-index:30;
+.popup {
+    position: fixed;
+    color: white;
+    padding: 12px 16px;
+    border-radius: 10px;
+    background-color: #1F1F1F;
+    z-index: 30;
+    border: 2px solid #333;
 }
 
-/* triangle on top */
-#addPlaylistPopup::before {
+#addPlaylistPopup {
+    left: auto;
+    top: auto;
+}
+
+#devicesPopup {
+    left: auto;
+    top: auto;
+}
+
+.popup::before {
   content: "";
   position: absolute;
+  left: var(--popup-arrow-left, 24px);
   top: -10px;
-  left: 24px; /* move triangle left/right */
   border-left: 10px solid transparent;
   border-right: 10px solid transparent;
   border-bottom: 10px solid white;
+  display: var(--popup-arrow-before-display, none);
+}
+
+.popup::after {
+  content: "";
+  position: absolute;
+  left: var(--popup-arrow-left, 24px);
+  bottom: -10px;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 10px solid white;
+  display: var(--popup-arrow-after-display, none);
 }
 
 .button {
@@ -2284,4 +2305,43 @@ li.disabled-offline {
   object-fit: cover;
   width:100%;
   height:100%;
+}
+
+#backChevron {
+  position: absolute;
+  height: 22.4px;
+  left: 15px;
+}
+
+#devicePopupTop {
+  text-align: center;
+}
+
+#deviceList {
+  min-width: 200px;
+  height: 33%;
+}
+
+.device {
+  display: flex;
+  height: 60px;
+  align-items:center;
+}
+
+.device img {
+  width: 20px;
+  height: 20px;
+}
+
+.device .songInfo {
+  flex-grow: 1;
+}
+
+.device img:first-child {
+  margin-right: 15px;
+  filter:invert(100%);
+}
+
+.connected h3 {
+  color: #1DB954;
 }
