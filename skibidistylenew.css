@@ -908,7 +908,7 @@ text-overflow: ellipsis;
   filter: invert(59%) sepia(29%) saturate(1078%) hue-rotate(89deg) brightness(95%) contrast(94%);
 }
 
-.player-controls button.active img {
+.footerInfoDiv button.active img {
   filter: invert(59%) sepia(29%) saturate(1078%) hue-rotate(89deg) brightness(95%) contrast(94%);
 }
 
@@ -1271,6 +1271,10 @@ text-overflow: ellipsis;
   font-size: 20px;
   cursor: pointer;
   margin-left: 15px; /* Add some spacing if needed */
+}
+
+.nav-right {
+  gap: 10px;
 }
 
 .settings-text span:first-child {
@@ -2344,4 +2348,30 @@ li.disabled-offline {
 
 .connected h3 {
   color: #1DB954;
+}
+
+#headphoneBtn {
+  height: 30px;
+  filter:invert(100%);
+}
+
+#listenAlongCont {
+  display:flex;
+}
+
+#listenAlongTextbox {
+  flex-grow: 1;
+  margin-right: 10px;
+  padding: 8px;
+  border-radius: 4px;
+  border: none;
+  background-color: #2C2C2C;
+  color: #FFF;
+}
+
+#listenAlongPopup {
+  width: 350px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
 }

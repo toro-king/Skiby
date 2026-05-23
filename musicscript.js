@@ -111,6 +111,7 @@ const shuffleIndicator = $('shuffleIndicator')
 const repeatBtn = $('repeatBtn');
 const repeatIndicator = $('repeatIndicator')
 const devicesBtn = $('deviceBtn')
+const deviceIndicator = $('deviceIndicator')
 const devicesPopup = $('devicePopup')
 const volumeBtn = $('volumeBtn')
 const volumeSlider = $('volumeSlider');
@@ -126,6 +127,8 @@ const currentTimeSpan = $('currentTime')
 const hamburgerBtn = $('hamburger-button-mmmmmyummy')
 const homeBtn = $('homeMode')
 const libraryBtn = $('onlineMode')
+const headphoneBtn = $('headphoneBtn')
+const listenerCount = $('listenerCount')
 
 const sidebar = $('sidebar')
 const sidbarOberlay = $('overlay')
@@ -146,6 +149,10 @@ const devicesBackBtn = $('backChevron');
 const devicesList = $('deviceList');
 const devicesText = $('no-devices')
 
+const listenAlongPopup = $('listenAlongPopup')
+const listenAlongTextbox = $('listenAlongTextbox')
+const createLinkBtn = $('createLinkBtn')
+
 const genericBackgroundImages = [
 	'https://torok.ing/songplayer/image/img6.jpg',
 	'https://torok.ing/songplayer/image/img12.jpg',
@@ -161,13 +168,19 @@ const popups = {
         popup: devicesPopup,
         button: devicesBtn,
         placement: 'top',
-        percentX: 50
+        percentX: 75
     }, 
     addPlaylist: {
         popup: addPlaylistPopup,
         button: addPlaylistBtn,
         placement: 'bottom',
         percentX: 12.5
+    },
+    listenAlong: {
+        popup: listenAlongPopup,
+        button: headphoneBtn,
+        placement: 'top',
+        percentX: 90
     }
 }
 
@@ -189,6 +202,7 @@ let Prefrences = JSON.parse(localStorage.getItem('songplayerPrefrencesCache')) |
     "discordRPC": false,
     "showListenAlongOnRPC": false
 }
+Prefrences.publicStream = false;
 
 let loggedIn = false;
 let userid;
@@ -228,9 +242,9 @@ let ws = {
     connectedUser: null
 };
 let wsBackoff = 1000
-let wsConnectAttempts = 0;
 let nextMsgId = 1;
 let deviceId = null;
+let firstConnectToDevice = false;
 
 inject()
 if (playlists) renderPlaylists();
@@ -330,15 +344,26 @@ function fetchJsons() {
     })
 }
 
+function loggedIn() {
+    loggedIn = true;
+    userid = res.id;
+    fetchJsons();
+    headphoneBtn.classList.remove('hidden')
+}
+
 fetch('https://torok.ing/auth/test', {credentials: 'include'}).then(a=>a.json()).then(res=>{
-    if (res.loggedIn || location.host === 'powop.cfd') {
-        loggedIn = true;
-        userid = res.id;
-        fetchJsons()
-    } else {
+    if (res.loggedIn || location.host === 'powop.cfd') 
+        loggedIn();    
+    else {
         songs = songs.filter(s=>songsOnDevice.has(s.id))
         init()
     }
+})
+
+window.addEventListener('message',(ev)=>{
+    const data = ev.data;
+    if (data.type === 'login_success')
+        loggedIn();
 })
 
 function getAverageColor(imgElement) {
@@ -610,14 +635,26 @@ function initializeShuffleQueue() {
 }
 
 function playTrack() {
-	if (!audio.src)
+	if (!audio.src && !firstConnectToDevice)
         return startPlayback(songs[0].id, playlists[0])
-	audio.play();
-	navigator.mediaSession.playbackState = 'playing';
-	updatePlayPauseButton();
+    audio.play().then(()=>{
+        if (firstConnectToDevice) {
+            firstConnectToDevice = false
+            sendWsMessage({type:"request",k:"timePosition"})
+        }
+        navigator.mediaSession.playbackState = 'playing';
+        updatePlayPauseButton();
+    }).catch(()=>{
+        customAlert("Please tap on the screen to enable sound","warning")
+    })
 }
 
+document.addEventListener('mousedown',()=>{
+    if (firstConnectToDevice) playTrack()
+})
+
 async function getUpNextTrack(del) {
+    if (ws.connectedUser) return {}
     if (manualQueue[0]) {
         if (del) return manualQueue.splice(0,1)[0]
         return manualQueue[0]
@@ -627,7 +664,7 @@ async function getUpNextTrack(del) {
             queue.splice(0,1) 
         }
         let song = queue[0];
-        if (!song) return null
+        if (!song) return {}
         if (songsOnDevice.has(song.id)) song = await getIdFromDb(song.id)
         if (del) queue.splice(0,1)[0]
         return song;
@@ -635,9 +672,9 @@ async function getUpNextTrack(del) {
     const set = new Set(currentlyPlayingPlaylist.song_ids)
     const playlist = songs.filter(s=>set.has(s.id) && (songsOnDevice.has(s.id) || navigator.onLine))
     const idx = playlist.findIndex(i=>i.id===currentlyPlayingSong.id)+1
-    if (idx === -1) return null
+    if (idx === -1) return {}
     let song = playlist[idx]
-    if (!song) return null
+    if (!song) return {}
     if (songsOnDevice.has(song.id)) song = await getIdFromDb(song.id)
     return song
 }
@@ -760,7 +797,7 @@ function updateCurrentlyPlayingUI(song) {
     let albumCoverSrc = getAlbumCoverForTrack(song)
 
     currentlyPlayingSong = song;
-    if (Prefrences.connectToWs && ws.ws && ws.ws.readyState === WebSocket.OPEN) updateMetadataWs(song);
+    if (Prefrences.publicStream && ws.ws && ws.ws.readyState === WebSocket.OPEN) updateMetadataWs(song.id);
     highlightCurrentPlaying()
 
     totalTimeSpan.innerText = song.length || '0:00'
@@ -882,19 +919,13 @@ function inject() {
             icon: "fa-cloud",
             content: [
                 {
-                    label: "Connect to WebSocket for remote control and streaming",
+                    label: "Connect to Listen Along server",
                     type: "toggle",
                     default: Prefrences.connectToWs,
                     onAction: (sel) => changeSetting("connectToWs",sel)
                 },
                 {
-                    label: "Device shows on device list",
-                    type: "toggle",
-                    default: Prefrences.publicStream,
-                    onAction: (sel) => changeSetting("publicStream",sel)
-                },
-                {
-                    label: "Allow controlling this device from WebSocket connections",
+                    label: "Allow controlling this device from connected devices",
                     type: "toggle",
                     default: Prefrences.canControlThisDeviceFromWs,
                     onAction: (sel) => changeSetting("canControlThisDeviceFromWs",sel)
@@ -923,9 +954,36 @@ function inject() {
     ])
 }
 
+headphoneBtn.onclick = () => {
+    listenAlongPopup.classList.toggle('hidden');
+    positionPopupOverElement("listenAlong");
+}
+createLinkBtn.onclick = () => {
+    if (!ws.ws || ws.ws.readyState !== WebSocket.OPEN) return customAlert("Please connect to Listen Along server!", "error")
+    if (listenAlongTextbox.value) {
+        navigator.clipboard.writeText(listenAlongTextbox.value).then(()=>{
+            createLinkBtn.innerText = "Copied!"
+            setTimeout(() => {
+                createLinkBtn.innerText = "Copy Link"
+            }, 2000);
+        }).catch(e=>{
+            customAlert("Couldn't write the link to clipboard, copy it yourself would you?", "error")
+        })
+        return
+    }
+    changeSetting("publicStream", true)
+    listenAlongTextbox.value = `${location.origin}${location.pathname}?li=${userid}:${deviceId}`
+    listenerCount.classList.remove('hidden')
+    updateMetadataWs(currentlyPlayingSong.id)
+    createLinkBtn.click();
+}
+
 function changeSetting(val,mode){
     Prefrences[val] = mode
-    if (val === "connectToWs" && mode) connectWs()
+    if (val === "connectToWs") {
+        if (mode) connectWs()
+        else ws.ws?.close()
+    }
     if (val === "publicStream" || val === "canControlThisDeviceFromWs")
         sendWsMessage({
             type: "settings_update",
@@ -984,7 +1042,7 @@ fullscreenProgressBar.oninput = () => progressBar.value = fullscreenProgressBar.
 
 function sendSendControlUpdate(action, value) {
     sendWsMessage({ type: "send_control_update", action, value }).catch(e=>{
-        customAlert("Failed to send control update", "error")
+        customAlert(e, "error")
     });
 }
 
@@ -2187,7 +2245,7 @@ function onWsMessage(msg) {
     switch (msg.type) {
         case "metadata_update": {
             updateCurrentlyPlayingUI(msg.data)
-            if (!ws.connectedUser.pause) playTrack();
+            if (!ws.connectedUser.pause && !firstConnectToDevice) playTrack();
         } break;
 
         case "control_update": {
@@ -2213,12 +2271,21 @@ function onWsMessage(msg) {
             }
         } break;
 
+        case "request": {
+            if (msg.k === "timePosition") sendControlUpdate("timePosition", audio.currentTime);
+        } break;
+        
+        case "listener_update": {
+            listenerCount.innerText = String(msg.count)
+        } break;
+
         case "connected": {
             deviceId = msg.deviceid;
         } break;
         case "disconnect": {
             ws.connectedUser = null;
             devicesBtn.classList.remove('active')
+            devicesIndicator.classList.add('hidden')
             customAlert("The controlling device has disconnected", "info")
         } break;
     }
@@ -2235,10 +2302,20 @@ function sendControlUpdate(k,v) {
             v: audio.currentTime
         })
 }
+function listenAlongVisibility(vis) {
+    if (vis) {
+
+    } else {
+
+    }
+}
 function connectWs() {
+    if ((!Prefrences.connectToWs && !document.location.search.includes('li')) || (ws.ws && ws.ws.readyState !== WebSocket.CLOSED)) return;
     ws.ws = new WebSocket('https://torok.ing/ws/skibskib')
     const sock = ws.ws
-    sock.onopen = () => {
+    sock.onopen = () => {        
+        console.log("The Websocket is open!")
+        wsBackoff = 1000
         sock.onerror = (err) => {
             console.warn("WebSocket error: ", err)
             sock.close()
@@ -2257,13 +2334,32 @@ function connectWs() {
         sendControlUpdate("volume", audio.volume)
         refreshDeviceList();
         updateMetadataWs(currentlyPlayingSong)
+        
+        const params = new URLSearchParams(document.location.search);
+        const li = params.get('li');
+        if (li) {
+            const data = li.split(":")
+            startSubscribeToDevice(data[0], data[1])
+        }
     }
     sock.onmessage = (ev) => {
         onWsMessage(JSON.parse(ev.data))
     }
+    sock.onclose = () => {
+        console.log("Websocket is closed")
+        createLinkBtn.innerText = "Create Link"
+        listenAlongTextbox.value = ""
+        listenerCount.innerText = "0"
+        listenerCount.classList.add('hidden')
+        setTimeout(() => {
+            wsBackoff += 3000
+            if (wsBackoff > 15000) wsBackoff = 15000
+            connectWs();
+        }, wsBackoff)
+    }
 }
-async function updateMetadataWs(metadata) {
-    metadata = songs.find(s=>s.id === metadata.id) || metadata
+async function updateMetadataWs(songid) {
+    const metadata = songs.find(s=>s.id === songid)
     const sock = ws.ws
     if (!sock || sock.readyState !== WebSocket.OPEN || ws.connectedUser) return;
     let metadataToSend = {...metadata, sendTime: new Date().getTime(), currentProgress: audio.currentTime}
@@ -2314,7 +2410,9 @@ async function startSubscribeToDevice(targetUserId, deviceId) {
         deviceid: deviceId
     }).then(()=>{
         ws.connectedUser = { targetUserId, deviceId }
+        firstConnectToDevice = true;
         devicesBtn.classList.add('active')
+        devicesIndicator.classList.remove('hidden')
         return true
     }).catch(err=>{
         customAlert(err.error, "error")
@@ -2322,6 +2420,7 @@ async function startSubscribeToDevice(targetUserId, deviceId) {
     })
 }
 
+let refreshInterval;
 async function refreshDeviceList(targetUserId) {
     const sock = ws.ws
     devicesBackBtn.classList[targetUserId ? 'remove' : 'add']('hidden')
@@ -2329,7 +2428,7 @@ async function refreshDeviceList(targetUserId) {
     devicesText.innerText = "Loading devices..."
     positionPopupOverElement("devices")
     if (!sock || sock.readyState !== WebSocket.OPEN) {
-        devicesList.innerHTML = '<p class="no-devices">You are not connected to WebSocket!</p>'
+        devicesText.innerText = 'You are not connected to WebSocket!'
         return;
     }
     const devices = []
@@ -2352,7 +2451,7 @@ async function refreshDeviceList(targetUserId) {
     devices.forEach(d => {
         const subtext = d.currentMetadata ? (d.currentMetadata?.title + " - " + d.currentMetadata?.artist) : ""
         const deviceEl = createDevice(d.name, subtext)
-        if (d.id === ws.connectedUser?.deviceId) deviceEl.classList.add('connected')
+        if (d.id === ws.connectedUser?.deviceId || (d.id === deviceId || d.id === String(userid)) && !ws.connectedUser) deviceEl.classList.add('connected')
         deviceEl.onclick = () => {
             if (!targetUserId) {
                 refreshDeviceList(d.id)
@@ -2361,6 +2460,7 @@ async function refreshDeviceList(targetUserId) {
             if (d.id === deviceId) {
                 ws.connectedUser = null;
                 devicesBtn.classList.remove('active')
+                devicesIndicator.classList.add('hidden')
                 return;
             }
             if (deviceEl.classList.contains('connected')) return;
@@ -2377,13 +2477,12 @@ async function refreshDeviceList(targetUserId) {
     else
         devicesText.innerText = ""
     positionPopupOverElement("devices")
+    if (refreshInterval) clearInterval(refreshInterval)
+    refreshInterval = setInterval(() => {
+        refreshDeviceList(targetUserId)
+    }, 10000)
 }
 devicesBackBtn.onclick = () => refreshDeviceList()
 
-if (Prefrences.connectToWs) {
+if (Prefrences.connectToWs || document.location.search.includes('li')) 
     connectWs();
-}
-
-setInterval(() => {
-    try{ws.ws.send('{"type":"hi"}')}catch{}
-}, 12500)

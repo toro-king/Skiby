@@ -43,7 +43,16 @@
             </div>
         </div>
         <div class="nav-right" id="navRight">
-
+            <img id="headphoneBtn" src="https://torok.ing/songplayer/icons/headphone.svg" class="hidden">
+            <span id="listenerCount" class="hidden">0</span>
+            <div id="listenAlongPopup" class="hidden popup">
+                <h3>Listen Along</h3>
+                <p>Create a link you can send to your friends so they can listen along to you!</p>
+                <div id="listenAlongCont">
+                    <input type="text" id="listenAlongTextbox">
+                    <button id="createLinkBtn" class="button">Create Link</button>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -250,9 +259,12 @@
 
             <!-- Column 3: Extra Controls (New) -->
             <div class="extra-controls">
-                <button id="deviceBtn" title="Devices">
-                    <img src="https://torok.ing/songplayer/icons/device.svg" alt="Devices">
-                </button>
+                <div class="control-item">                
+                    <button id="deviceBtn" title="Devices">
+                        <img src="https://torok.ing/songplayer/icons/device.svg" alt="Devices">
+                    </button>
+                    <span class="indicator hidden" id="deviceIndicator"></span>
+                </div>
                 <div id="devicePopup" class="hidden popup">
                     <div id="devicePopupTop">
                         <img src="https://torok.ing/songplayer/icons/chevron_left.svg" id="backChevron" class="hidden"> 
