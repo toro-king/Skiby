@@ -31,17 +31,29 @@
     border-radius:8px;
 }
 
-.playlist-header {
+.playlist-header-container-but-cooler {
+  position: sticky;
+  top: 0;
+  z-index: 10; /* Ensure it stays above list items */
+}
+
+.playlist-header-sticky {
   display: grid;
   grid-template-columns: 40px 3fr 2fr 150px 50px 30px; /* # | Title/Artist | Album | Date added | Length | Threedots */
   align-items: center;
+}
+
+.playlist-header-selected {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.playlist-header {
   padding: 10px 20px;
   background-color: #1F1F1F; /* Same as sidebar background */
   color: #B3B3B3; /* Lighter color for headers */
   font-weight: bold;
-  position: sticky;
-  top: 0;
-  z-index: 10; /* Ensure it stays above list items */
   border-bottom: 1px solid #333;
 }
 
@@ -106,6 +118,7 @@ html, body {
 margin: 0;
 padding: 0;
 height: 100%;
+overflow-x: hidden;
 }
 
 body {
@@ -126,9 +139,11 @@ body {
   background-color: #1F1F1F;
   padding: 8px 16px; /* Reduced padding for less height */
   border-bottom: 2px solid #333;
-  position: relative;
+  position: sticky;
+  top: 0;
   z-index: 100;
   height: 50px; /* Set a fixed height for the nav */
+  width:100%;
 }
 
 /* Container holding sidebar and main content */
@@ -2374,4 +2389,147 @@ li.disabled-offline {
   display:flex;
   flex-direction:column;
   gap:6px;
+}
+
+/* stuff exclusive to the homepage */
+
+.homepage-hero {
+    min-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    background: linear-gradient(45deg, #63523c, #837b6b);
+    border-radius: 20px;
+    padding: 2rem;
+    margin: 20px;
+    margin-bottom: 60px;
+}
+
+.logo-homepage {
+    width: 120px; /* Optional */
+    height: auto;
+    margin-bottom: 1rem;
+}
+
+.homepage-section {
+    display:flex;
+    opacity: 0;
+    transition: opacity 0.8s ease, transform 0.8s ease;
+    padding: 2rem;
+}
+
+.homepage-section.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.homepage-section img {
+    max-width: 20%;
+    border-radius: 10px;
+    padding: 1rem;
+}
+
+.homepage-section-one {
+  transform: translateX(15%);
+  background-color: #1F1F1F;
+}
+.homepage-section-two {
+  transform: translateX(-15%);
+  background-color: #444444;
+}
+
+.homepage-hero h1 {
+    margin: 0.5rem 0;
+}
+
+.homepage-hero p {
+    margin: 0;
+}
+
+.svgicon {
+  width: 16px;
+  height: 16px;
+}
+
+#pickMediaModalBottom {
+    display: flex;
+    flex-direction:column;
+    flex-grow: 1;
+    background-color: #1F1F1F;
+}
+
+#pickMediaModalToolbar {
+  height: 40px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+}
+
+#pickMediaModalToolbar img {
+  height: 75%;
+}
+#pickMediaModalToolbar a {
+  color: white;
+}
+
+#pickMediaModalItemList {
+  height: 1px;
+  overflow: overlay;
+  flex-grow: 1;
+}
+
+.media-item {
+    width: 150px;
+    height: 190px;
+    display: inline-flex;
+    border: 1px solid white;
+    padding: 8px;
+    margin: 8px;
+    flex-direction: column;
+    border-radius: 8px;
+    transition: background-color 0.1s;
+    overflow: hidden;
+}
+
+.media-item img {
+    width: 100%;
+    display: block;
+    aspect-ratio: 1 / 1;
+}
+
+.media-item span {
+    flex-grow: 1;
+    align-content: center;
+    text-align: center;
+}
+
+.media-item:hover {
+  background-color: #333;
+}
+
+.media-item.selected {
+  background-color: #0f5d2b;
+}
+
+#songModalError, #playlistModalError {
+  font-size: 14px;
+  color: indianred;
+}
+
+.findBtn {
+  padding: 8px;
+  background-color: #2C2C2C;
+  color: white;
+  border: 1px solid #555;
+  border-radius: 4px;
+  margin-top: 15px;
+}
+
+.findBtn.disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }

@@ -9,14 +9,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=0.9">
     <script src="https://torok.ing/static/accountinjection.js"></script>
 <link rel="stylesheet" href="https://torok.ing/songplayer/skibidistylenew.css">
-<style>
-    .svgicon {
-        width: 16px;
-        height: 16px;
-    }
-</style>
 </head>
-<body>
+<body style="display:flex;align-items:center;">
     <header class="top-nav">
         <div class="nav-left">
             <div class="brand">
@@ -34,27 +28,56 @@
         <button id="openAppButton">Open App</button>
     </div>
     </header>
-    <div id="homeSection" class="section">
-        <h1>Skiby</h1>
-        <h2>Just another music player for you and your music.</h2>
-        <h3>Todo: Make this actually look good</h3>
-        <hr>
-        <h2>But why?</h2>
-        <p>Skiby was built for ease of use in mind. It is for the people who just want to listen to a bunch of MP3s, without all the extra features other music players have. Skiby handles songs and playlists; it is up to you what content you put in it.</p>
-        <hr>
-        <h2>All the features you'd want in a music player</h2>
-        <h3>Free-to-use</h3>
-        <p>You can use skiby as much as you'd like for free in the browser; there will never be a subscription or permium plan available. You can add thousands of songs to your library without paying a dime. Adding songs is as simple as dragging files into your browser.</p>
-        <h3>No sign-in</h3>
-        <p>Logging in to an account is totally optional. If you choose not to sign in, you will still be able to Skiby in its entirity; the app will only use files on your local device.</p>
-        <h3>Upload once, listen everywhere</h3>
-        <p>If you do choose to sign into a torok.ing account, songs can sync to all of your devices. You can listen to your music on your phone, tablet, laptop, or whatever device you might be using.</p>
-        <h3>Fullscreen player</h3>
-        <p>Use Skiby's built in fullscreen player to display songs on the big screen. You can customize each song's fullscreen background, from images to videos.</p>
-        <h3>One miniplayer, many sizes</h3>
-        <p>You may leave the tab, but the miniplayer doesn't leave you. Resize it however you'd like: tall, square, skinny, wide, or anything else. The content automatically adapts to your preference. <em>Coming soon</em></p>
-        <h3>And everything else you'd expect</h3>
-        <p>Shuffle, repeat, manual queue, Media Session API, IndexedDB, customization...</p>
+    <div id="homeSection" class="section" style="padding:unset;max-width:1000px;">
+        <div class="homepage-hero">
+            <img src="https://torok.ing/songplayer/image/logo.png" alt="Skiby Logo" class="logo-homepage">
+            <h1>Skiby</h1>
+            <p>Just another music player for you and your music.</p>
+        </div>
+        <div class="homepage-section homepage-section-two" style="text-align:center;display:block">
+            <h2>All the features you'd want in a music player</h2>
+        </div>
+        <div class="homepage-section homepage-section-one">
+            <div>
+                <h3>Free-to-use</h3>
+                <p>You can use skiby as much as you'd like for free in the browser; there will never be a subscription or permium plan available. You can add thousands of songs to your library without paying a dime. Adding songs is as simple as dragging files into your browser.</p>
+            </div>
+            <img src="https://torok.ing/songplayer/image/logo.png">
+        </div>
+        <div class="homepage-section homepage-section-two">
+            <img src="https://torok.ing/songplayer/image/logo.png">
+            <div>
+                <h3>No sign-in</h3>
+                <p>Logging in to an account is totally optional. If you choose not to sign in, you will still be able to Skiby in its entirity; the app will only use files on your local device.</p>
+            </div>
+        </div>
+        <div class="homepage-section homepage-section-one">
+            <div>
+                <h3>Upload once, listen everywhere</h3>
+                <p>If you do choose to sign into a torok.ing account, songs can sync to all of your devices. You can listen to your music on your phone, tablet, laptop, or whatever device you might be using.</p>
+            </div>
+            <img src="https://torok.ing/songplayer/image/logo.png">
+        </div>
+        <div class="homepage-section homepage-section-two">
+            <img src="https://torok.ing/songplayer/image/logo.png">
+            <div>
+                <h3>Fullscreen player</h3>
+                <p>Use Skiby's built in fullscreen player to display songs on the big screen. You can customize each song's fullscreen background, from images to videos.</p>
+            </div>
+        </div>
+        <div class="homepage-section homepage-section-one">
+            <div>
+                <h3>One miniplayer, many sizes</h3>
+                <p>You may leave the tab, but the miniplayer doesn't leave you. Resize it however you'd like: tall, square, skinny, wide, or anything else. The content automatically adapts to your preference.</p>
+            </div>
+            <img src="https://torok.ing/songplayer/image/logo.png">
+        </div>
+        <div class="homepage-section homepage-section-two">
+            <div>
+                <h3>And everything else you'd expect</h3>
+                <p>Shuffle, repeat, manual queue, Media Session API, IndexedDB, listen along, customization...</p>
+            </div>
+        </div>
         <hr>
         <h2>Interested?</h2>
         <button onclick="window.location.href = 'https:\/\/torok.ing/songplayer/MusicPlayernew.html'">Open App</button>
@@ -94,5 +117,19 @@ onlineMode.onclick=()=>switchMode('Library');
 openAppButton.onclick=()=>window.location.href='https://torok.ing/songplayer/MusicPlayernew.html';
 
 AccountInjection.inject($('navRight'))
+
+const elements = document.querySelectorAll(".homepage-section");
+
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+            entry.target.classList.add("show");
+        }
+    });
+}, {
+    threshold: 0.2
+});
+
+elements.forEach((el) => observer.observe(el));
 </script>
 </html>

@@ -137,12 +137,22 @@
                         </div>
                         <button class="three-dots-button" id="playlist-view-three-dots-button">⋮</button>
                     </div>
-                    <div class="playlist-header">
-                        <div class="header-index">#</div>
-                        <div class="header-title-artist">Title & Artist</div>
-                        <div class="header-album">Album</div>
-                        <div class="header-date-added">Date Added</div>
-                        <div class="header-length">Length</div>
+                    <div class="playlist-header-container-but-cooler">
+                        <div class="playlist-header-sticky playlist-header">
+                            <div class="header-index">#</div>
+                            <div class="header-title-artist">Title & Artist</div>
+                            <div class="header-album">Album</div>
+                            <div class="header-date-added">Date Added</div>
+                            <div class="header-length">Length</div>
+                        </div>
+                        <div class="playlist-header playlist-header-selected hidden" id="playlist-header-selected">
+                            <div id="playlist-header-item-count">0 items selected</div>
+                            <button class="button" id="playlist-header-find-metadata-btn"><i class="fas fa-search" id="playlist-header-find-metadata-btn-icon"></i> Find Metadata</button>
+                            <button class="button" id="playlist-header-find-art-btn"><i class="fas fa-search" id="playlist-header-find-art-btn-icon"></i> Find Art</button>
+                            <button class="button" id="playlist-header-delete-btn"><i class="fas fa-trash"></i> Delete</button>
+                            <div style="flex-grow:1;"></div>
+                            <button class="button" id="playlist-header-done-btn"><i class="fas fa-check"></i> Done</button>
+                        </div>
                     </div>
                     <ul id="onlinePlaylist" class="playlist"></ul>
                 </div>
@@ -302,6 +312,7 @@
                     <em style="font-size:14px; color:darkgrey">Unsaved changes</em>
                     <button id="songModalRevertBtn">Revert</button>
                     <button id="songModalSaveBtn">Save</button>
+                    <em id="songModalError" class="hidden">INTERNAL SERVER ERROR!</em>
                 </div>
                 <button class="close-button" id="closeEditSongModal">&times;</button>
             </div>
@@ -337,6 +348,7 @@
                             </div>
                             <!-- Save Button is now positioned via flexbox on the form -->
                         </div>
+                        <button class="findBtn" id="findMetadataBtn"><i id="findMetadataBtnIcon" class="fa-solid fa-search"></i> Find Metadata</button>
                     </div>
                     <!-- Personalization Options -->
                     <div class="content-panel" data-tab="tabPersonalization" style="display: none;">
@@ -375,6 +387,7 @@
                                 <input type="file" id="modalFullscreenBgFile" accept="image/*,video/*" class="hidden">
                             </div>
                         </div>
+                        <button class="findBtn" id="findArtBtn"><i id="findArtBtnIcon" class="fa-solid fa-search"></i> Find Art</button>
                     </div>
                 </div>
             </div>
@@ -389,6 +402,7 @@
                     <em style="font-size:14px; color:darkgrey">Unsaved changes</em>
                     <button id="playlistModalRevertBtn">Revert</button>
                     <button id="playlistModalSaveBtn">Save</button>
+                    <em id="playlistModalError" class="hidden">INTERNAL SERVER ERROR!</em>
                 </div>
                 <button class="close-button" id="closeEditPlaylistModal">&times;</button>
             </div>
@@ -404,7 +418,7 @@
                 <div class="tab-content">
                     <!-- Game Options -->
                     <div class="content-panel" data-tab="tabGame">
-                        <h3>Song metadata</h3>
+                        <h3>Playlist metadata</h3>
                         <div id="songInfoForm" class="playlist-edit-details">
                             <div class="form-row">
                                 <label for="modalPlaylistName">Name:</label>
@@ -440,6 +454,26 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="pickMediaModal">
+        <div class="settings-modal">
+            <div class="modal-header">
+                <h2>Media</h2>
+                <div class="hidden modal-unsaved-changes" id="actionsMediaModal">
+                    <button id="mediaModalSelectBtn">Select</button>
+                </div>
+                <button class="close-button" id="closeMediaModal">&times;</button>
+            </div>
+            <div id="pickMediaModalBottom">
+                <div id="pickMediaModalToolbar">
+
+                </div>
+                <div id="pickMediaModalItemList">
+
                 </div>
             </div>
         </div>

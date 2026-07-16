@@ -52,6 +52,18 @@ const editSongModalID = $('modalSongID')
 const editSongModalUnsaved = $('unsavedChangesSongModal')
 const editSongModalRevertBtn = $('songModalRevertBtn')
 const editSongModalSaveBtn = $('songModalSaveBtn')
+const editSongModalError = $('songModalError')
+const editSongModalFindBtn = $('findMetadataBtn')
+const editSongModalFindBtnIcon = $('findMetadataBtnIcon')
+const editSongModalFindArtBtn = $('findArtBtn')
+const editSongModalFindArtBtnIcon = $('findArtBtnIcon')
+
+const mediaModal = $('pickMediaModal')
+const closeMediaModalBtn = $('closeMediaModal')
+const mediaModalUnsaved = $('actionsMediaModal')
+const mediaModalSelectBtn = $('mediaModalSelectBtn')
+const mediaModalToolbar = $('pickMediaModalToolbar')
+const mediaModalBottom = $('pickMediaModalItemList')
 
 const changeAlbumCoverBtn = $('changeAlbumCoverBtn')
 const resetAlbumCoverBtn = $('resetAlbumCoverBtn')
@@ -71,6 +83,7 @@ const editPlaylistModalID = $('modalPlaylistID')
 const editPlaylistModalUnsaved = $('unsavedChangesPlaylistModal')
 const editPlaylistModalRevertBtn = $('playlistModalRevertBtn')
 const editPlaylistModalSaveBtn = $('playlistModalSaveBtn')
+const editPlaylistModalError = $('playlistModalError')
 
 const changePlaylistCoverBtn = $('changePlaylistCoverBtn')
 const resetPlaylistCoverBtn = $('resetPlaylistCoverBtn')
@@ -132,6 +145,15 @@ const listenerCount = $('listenerCount')
 
 const sidebar = $('sidebar')
 const sidbarOberlay = $('overlay')
+
+const playlistHeaderSelected = $('playlist-header-selected')
+const playlistHeaderItemCount = $('playlist-header-item-count')
+const playlistHeaderFindMetadataBtn = $('playlist-header-find-metadata-btn')
+const playlistHeaderFindMetadataBtnIcon = $('playlist-header-find-metadata-btn-icon')
+const playlistHeaderFindArtBtn = $('playlist-header-find-art-btn')
+const playlistHeaderFindArtBtnIcon = $('playlist-header-find-art-btn-icon')
+const playlistHeaderDeleteBtn = $('playlist-header-delete-btn')
+const playlistHeaderDoneBtn = $('playlist-header-done-btn')
 
 const uploadArea = $('onlineUploadArea')
 const songList = $('onlinePlaylist')
@@ -229,6 +251,9 @@ let upNextAlbumArtBlobUrl;
 
 let fullscreenBgSet;
 let currentFullscreenBg = 1;
+
+let selectingSongs = false;
+let selectedSongIds = new Set();
 
 let onlineActionsQueue = JSON.parse(localStorage.getItem('onlineActionsQueue')) || [];
 let failedOnlineActionsQueue = [];
@@ -344,16 +369,17 @@ function fetchJsons() {
     })
 }
 
-function loggedIn() {
+function afterLogin(id) {
     loggedIn = true;
-    userid = res.id;
+    userid = id;
     fetchJsons();
     headphoneBtn.classList.remove('hidden')
+    connectWs()
 }
 
 fetch('https://torok.ing/auth/test', {credentials: 'include'}).then(a=>a.json()).then(res=>{
     if (res.loggedIn || location.host === 'powop.cfd') 
-        loggedIn();    
+        afterLogin(res.id);    
     else {
         songs = songs.filter(s=>songsOnDevice.has(s.id))
         init()
@@ -363,7 +389,7 @@ fetch('https://torok.ing/auth/test', {credentials: 'include'}).then(a=>a.json())
 window.addEventListener('message',(ev)=>{
     const data = ev.data;
     if (data.type === 'login_success')
-        loggedIn();
+        afterLogin(data.id);
 })
 
 function getAverageColor(imgElement) {
@@ -501,6 +527,7 @@ async function selectPlaylist(id) {
         }
         if (allowReorder) {
             li.ondrop = (ev) => {
+                if (selectingSongs) return;
                 ev.preventDefault();
                 if (currentDraggedIndex === null || currentDraggedIndex === index) return;
                 const temp = playlist.song_ids[currentDraggedIndex];
@@ -510,6 +537,7 @@ async function selectPlaylist(id) {
             }
         } 
 
+        const trackCheckbox = createEl('input','track-checkbox')
         const trackIndex = createEl('div','track-index')
         const trackTitleArtist = createEl('div','track-title-artist')
         const trackCoverImg = createEl('img','track-cover')
@@ -528,6 +556,9 @@ async function selectPlaylist(id) {
         if (songStatuses[song.id] === "local") statusIcon.src = 'https://torok.ing/songplayer/icons/file.svg'
         else if (songStatuses[song.id] === "downloaded") statusIcon.src = 'https://torok.ing/songplayer/icons/local.svg'
         else statusIcon.src = 'https://torok.ing/songplayer/icons/online.svg'
+        trackCheckbox.type = 'checkbox'
+        if (!selectingSongs) trackCheckbox.classList.add('hidden')
+        else li.style.gridTemplateColumns = '20px 40px 3fr 2fr 150px 50px 30px';
         trackIndex.innerText = index + 1
         trackCoverImg.loading = 'lazy'
         if (availlable) {
@@ -556,6 +587,11 @@ async function selectPlaylist(id) {
         };
         li.onclick = (ev) => {
             if (threeDotsBtn.contains(ev.target)) return;
+            if (selectingSongs) {
+                trackCheckbox.checked = !trackCheckbox.checked
+                selectedSongUpdate(song.id, trackCheckbox.checked)
+                return;
+            }
             if (!availlable) return;
             currentlyPlayingPlaylist = playlist
             startPlayback(song.id, playlist)
@@ -570,6 +606,7 @@ async function selectPlaylist(id) {
         trackTitleArtist.appendChild(trackText)
         trackMenu.appendChild(threeDotsBtn)
 
+        li.appendChild(trackCheckbox)
         li.appendChild(trackIndex)
         li.appendChild(trackTitleArtist)
 		li.appendChild(trackAlbum);
@@ -743,12 +780,13 @@ function updatePlayPauseButton() {
 	}
 }
 
-function checkForOnlineChange(song) {
+async function checkForOnlineChange(song) {
     if (!songsOnDevice.has(song.id)) return;
     const songInSongs = songs.find(s=>s.id === song.id)
     if (!songInSongs) {
         songStatuses[song.id] = "local"
-        deleteSong(song.id) // would just making song local be better? the song was deleted on the server anyway
+        await deleteSong(song.id) // would just making song local be better? the song was deleted on the server anyway
+        selectPlaylist(currentlyViewingPlaylist.id)
         return;
     };
     if (new Date(songInSongs.modified) > new Date(song.modified) && navigator.onLine) {
@@ -797,7 +835,7 @@ function updateCurrentlyPlayingUI(song) {
     let albumCoverSrc = getAlbumCoverForTrack(song)
 
     currentlyPlayingSong = song;
-    if (Prefrences.publicStream && ws.ws && ws.ws.readyState === WebSocket.OPEN) updateMetadataWs(song.id);
+    updateMetadataWs(song.id);
     highlightCurrentPlaying()
 
     totalTimeSpan.innerText = song.length || '0:00'
@@ -974,7 +1012,6 @@ createLinkBtn.onclick = () => {
     changeSetting("publicStream", true)
     listenAlongTextbox.value = `${location.origin}${location.pathname}?li=${userid}:${deviceId}`
     listenerCount.classList.remove('hidden')
-    updateMetadataWs(currentlyPlayingSong.id)
     createLinkBtn.click();
 }
 
@@ -984,7 +1021,7 @@ function changeSetting(val,mode){
         if (mode) connectWs()
         else ws.ws?.close()
     }
-    if (val === "publicStream" || val === "canControlThisDeviceFromWs")
+    if (val === "publicStream" || val === "canControlThisDeviceFromWs" || val === "discordRPC")
         sendWsMessage({
             type: "settings_update",
             k: val,
@@ -1038,8 +1075,10 @@ fullscreenPrevBtn.onclick = () => prevBtn.click();
 fullscreenNextBtn.onclick = () => nextBtn.click();
 fullscreenShuffleBtn.onclick = () => shuffleBtn.click()
 fullscreenRepeatBtn.onclick = () => repeatBtn.click()
-fullscreenProgressBar.oninput = () => progressBar.value = fullscreenProgressBar.value
-
+fullscreenProgressBar.oninput = () => {
+    progressBar.value = fullscreenProgressBar.value
+    progressBar.dispatchEvent(new Event('input', { bubbles: true, cancelable: true, composed: true, target: fullscreenProgressBar }));
+}
 function sendSendControlUpdate(action, value) {
     sendWsMessage({ type: "send_control_update", action, value }).catch(e=>{
         customAlert(e, "error")
@@ -1055,6 +1094,8 @@ playPauseBtn.onclick = () => {
     if (ws.connectedUser) return sendSendControlUpdate("playpause", null)
     if (audio.paused) playTrack()
     else pauseTrack()
+    if (Prefrences.syncVideo && fullscreenBackgroundVideo.src && currentlyPlayingSong.fullscreenbg.match(/\.(mp4|webm|mov)$/i))
+        fullscreenBackgroundVideo[audio.paused ? 'pause' : 'play']()
 }
 nextBtn.onclick = async () => {
     if (ws.connectedUser) return sendSendControlUpdate("next", null)
@@ -1085,8 +1126,12 @@ repeatBtn.onclick = () => {
     updateControlBtns()
 }
 progressBar.oninput = () => {
-    if (ws.connectedUser) return sendSendControlUpdate("timePosition", (progressBar.value / 100) * audio.duration)
-    audio.currentTime = (progressBar.value / 100) * audio.duration
+    const val = (progressBar.value / 100) * audio.duration
+    if (ws.connectedUser) return sendSendControlUpdate("timePosition", val)
+    else sendControlUpdate("timePosition", val)
+    audio.currentTime = val
+    if (Prefrences.syncVideo && fullscreenBackgroundVideo.src && currentlyPlayingSong.fullscreenbg.match(/\.(mp4|webm|mov)$/i))
+        fullscreenBackgroundVideo.currentTime = val
 }
 devicesBtn.onclick = () => {
     devicesPopup.classList.toggle('hidden');
@@ -1094,6 +1139,7 @@ devicesBtn.onclick = () => {
 }
 volumeSlider.oninput = () => {
     if (ws.connectedUser) return sendSendControlUpdate("volume", volumeSlider.value)
+    else sendControlUpdate("volume", volumeSlider.value)
     audio.volume = volumeSlider.value
 }
 fullscreenBtn.onclick = () => {
@@ -1267,33 +1313,35 @@ async function workThroughQueue() {
 
     while (onlineActionsQueue.length > 0) {
         const item = onlineActionsQueue[0];
-        try {
-            if (item.type === "upload") {
-                await uploadSongToServer(item.data.id);
-            } else if (item.type === "download_song") {
-                await downloadSongForOfflineUse(item.data)
-            } else if (item.type === "create_playlist" || item.type === "update_playlist") {
-                if (!loggedIn) throw new Error("Need to be logged in to create a playlist on the server")
-                const playlist = playlists.find(p=>p.id === item.data)
-                if (playlist){
-                    const response = await fetch('https://torok.ing/songplayer/',{
-                        method: item.type === "create_playlist" ? "PUT" : "PATCH",
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            action: item.type,
-                            playlist_id: playlist.id,
-                            metadata: playlist
+        if (item.owner === userid) {
+            try {
+                if (item.type === "upload") {
+                    await uploadSongToServer(item.data.id);
+                } else if (item.type === "download_song") {
+                    await downloadSongForOfflineUse(item.data)
+                } else if (item.type === "create_playlist" || item.type === "update_playlist") {
+                    if (!loggedIn) throw new Error("Need to be logged in to create a playlist on the server")
+                    const playlist = playlists.find(p=>p.id === item.data)
+                    if (playlist){
+                        const response = await fetch('https://torok.ing/songplayer/',{
+                            method: item.type === "create_playlist" ? "PUT" : "PATCH",
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                action: item.type,
+                                playlist_id: playlist.id,
+                                metadata: playlist
+                            })
                         })
-                    })
-                    const res = await response.json();
-                    if (!res.success) throw new Error(res.error)
-                };
+                        const res = await response.json();
+                        if (!res.success) throw new Error(res.error)
+                    };
+                }
+            } catch (err) {
+                console.warn("Error working through an online queue item:", err, item.data);
+                //failedOnlineActionsQueue.push(item);
+                // if an action fails, we currently just skip it and move on to the next one. This is because if we keep retrying failed actions, they will block the queue and prevent any subsequent successful actions from being processed. In the future, we might want to implement a more robust retry mechanism that allows for a certain number of retries before giving up on an action, or we could move failed actions to a separate queue that is retried less frequently. For now, we will just log the error and continue processing the rest of the queue.
+                // shut up copilot
             }
-        } catch (err) {
-            console.warn("Error working through an online queue item:", err, item.data);
-            //failedOnlineActionsQueue.push(item);
-            // if an action fails, we currently just skip it and move on to the next one. This is because if we keep retrying failed actions, they will block the queue and prevent any subsequent successful actions from being processed. In the future, we might want to implement a more robust retry mechanism that allows for a certain number of retries before giving up on an action, or we could move failed actions to a separate queue that is retried less frequently. For now, we will just log the error and continue processing the rest of the queue.
-            // shut up copilot
         }
         onlineActionsQueue.shift();
     }
@@ -1322,7 +1370,8 @@ window.addEventListener('offline', () => {
 function queueAction(type, data) {
     if ((type === "update_playlist" || type === "create_playlist") 
         && onlineActionsQueue.find(i=>(i.type === "update_playlist" || i.type === "create_playlist") && i.data === data)) return;
-    onlineActionsQueue.push({type, data})
+    if (!loggedIn) return;
+    onlineActionsQueue.push({type, data, owner: userid})
     workThroughQueue();
 }
 
@@ -1359,7 +1408,7 @@ function addSongsToPlaylist(ids, playlistid) {
     function add() {
         playlist.song_ids.push(...ids)
         if (playlistid === currentlyViewingPlaylist.id) selectPlaylist(playlistid)
-        queueAction("update_playlist", playlist.id)
+        if (playlistid !== "all songs") queueAction("update_playlist", playlist.id)
     }
     if (ids.some(id=>songStatuses[id] !== "local") && !navigator.onLine) {
         customAlert("One or more songs you're trying to add to " + playlist.name + " are not available offline. Connect to the World Wide Web to add them.", "error")
@@ -1389,39 +1438,57 @@ function removeSongFromPlaylist(songid, playlistid) {
     queueAction("update_playlist", playlist.id)
 }
 
-function deleteSong(id) {
-    if (songStatuses[id] !== "local" && !navigator.onLine) return customAlert("Connect to the World Wide Web to delete this song", "error")
+async function deleteSong(id) {
+    return new Promise(async (res, rej) => {
+        if (songStatuses[id] !== "local" && !navigator.onLine) {
+            return rej("Connect to the World Wide Web to delete this song")
+        } 
 
-    function deleteFromDevice() {
-        songs.splice(songs.findIndex(s=>s.id === id),1)
-        const transaction = db.transaction('songs','readwrite')
-        transaction.objectStore('songs').delete(id)
-        songsOnDevice.delete(id)
-        delete songStatuses[id]
-        playlists.forEach(p=>{
-            p.song_ids = p.song_ids.filter(sid=>sid !== id)
-            if (currentlyViewingPlaylist.id === p.id) selectPlaylist(currentlyViewingPlaylist.id)
-        })
-    }
-
-    if (songStatuses[id] !== "local" && loggedIn && (!songOwnership[id] || songOwnership[id] === userid)) {
-        fetch('https://torok.ing/songplayer', {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                delete_type: "song",
-                song_id: id,
+        function deleteFromDevice() {
+            songs.splice(songs.findIndex(s=>s.id === id),1)
+            const transaction = db.transaction('songs','readwrite')
+            transaction.objectStore('songs').delete(id)
+            songsOnDevice.delete(id)
+            delete songStatuses[id]
+            playlists.forEach(p=>{
+                p.song_ids = p.song_ids.filter(sid=>sid !== id)
             })
-        }).then(res=>res.json()).then(data=>{
-            if (data.success) {
-                deleteFromDevice()
-            } else customAlert(data.error, 'error')
-        }).catch(err=>{
-            customAlert(err, "error")
-        })
-    } else deleteFromDevice();
+            res()
+        }
+
+        if (songStatuses[id] !== "local" && loggedIn && (!songOwnership[id] || songOwnership[id] === userid)) {
+            fetch('https://torok.ing/songplayer', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    delete_type: "song",
+                    song_id: id,
+                })
+            }).then(res=>res.json()).then(data=>{
+                if (data.success) {
+                    deleteFromDevice()
+                } else {
+                    rej(data.error)
+                }
+            }).catch(err=>{
+               rej(err)
+            })
+        } else deleteFromDevice();
+    })
+}
+
+function startDeleteSongs(ids) {
+    const body = createEl('div')
+    body.innerText = "Are you sure you want to delete " + (ids.length > 1 ? ids.length + " songs" : "this song") + "? This action cannot be undone."
+    showAModal("Delete Song" + (ids.length > 1 ? "s" : ""), body, {
+        okButtonAction: async () => {
+            await Promise.all(ids.map(id => deleteSong(id)));
+            selectPlaylist(currentlyViewingPlaylist.id)
+        },
+        buttons: true
+    })
 }
 
 function removeSongMediaFromDevice(id) {
@@ -1445,7 +1512,7 @@ function removeSongMediaFromDevice(id) {
 }
 
 async function uploadMedia(file, type, other = []) {
-    return new Promise((res, rej) => {
+    return new Promise((resolveFuncBtwFuncMeansFunction, rej) => {
         const formData = new FormData();
         formData.append('file', file)
         formData.append("upload_type", type)
@@ -1454,10 +1521,14 @@ async function uploadMedia(file, type, other = []) {
         fetch('https://torok.ing/songplayer/', {
             method: 'POST',
             body: formData
-        }).then(res=>res.json()).then(data=>{
+        }).then(async res=>{
+            if (!res.ok) {
+                return rej("Server error")
+            }
+            const data = await res.json()
             if (data.success) {
                 const filename = data.data.filename || data.data.split('/').pop();
-                res(filename)
+                resolveFuncBtwFuncMeansFunction(filename)
             }
             else rej(data)
         }).catch(err=>{
@@ -1606,7 +1677,7 @@ async function closeMiniplayer() {
 }
 
 document.onvisibilitychange = () => {
-    if (document.hidden && Prefrences.miniplayer) openMiniplayer();
+    if (document.hidden && Prefrences.miniplayer && !audio.paused) openMiniplayer();
     else closeMiniplayer();
 }
 
@@ -1623,7 +1694,12 @@ function setFullscreenBg(song) {
     if (nextBgDiv.querySelector('video')) fullscreenBackgroundVideo.remove()
 	nextBgDiv.innerHTML = '';
 
-    const isVideo = song.fullscreenbg && (song.fullscreenbg.match(/\.(mp4|webm|mov)$/i) || (song.fullscreenbg.type && song.fullscreenbg.type.startsWith('video/')))
+    let isVideo;
+    if (typeof song.fullscreenbg === 'object' && song.fullscreenbg instanceof Blob) {
+        isVideo = song.fullscreenbg.type.startsWith('video/')
+    } else {
+        isVideo = song.fullscreenbg && song.fullscreenbg.match(/\.(mp4|webm|mov)$/i)
+    }
 
     if (isVideo) {
         nextBgDiv.style.backgroundImage = 'none';
@@ -1633,7 +1709,14 @@ function setFullscreenBg(song) {
         nextBgDiv.appendChild(fullscreenBackgroundVideo);
 
         async function play() {
-            fullscreenBackgroundVideo.play();
+            if (Prefrences.syncVideo) {
+                const currentTime = audio.currentTime;
+                if (Math.abs(fullscreenBackgroundVideo.currentTime - currentTime) > 0.5) {
+                    fullscreenBackgroundVideo.currentTime = currentTime;
+                }
+                if (!audio.paused) fullscreenBackgroundVideo.play()
+            }
+            else fullscreenBackgroundVideo.play();
         }
         if (fullscreenBackgroundVideo.readyState >= 2 && fullscreenBackgroundVideo.duration) {
             play()
@@ -1705,6 +1788,240 @@ const cancel = () => {
     }
 }
 
+async function openMediaModal(type) {
+    return new Promise(res=>{
+        closeMediaModalBtn.onclick = () => {
+            pickMediaModal.classList.add('hidden')
+            res(null)
+        }
+        actionsMediaModal.classList.add('hidden')
+        pickMediaModal.classList.remove('hidden')
+        mediaModalBottom.innerHTML = '<p>Loading...</p>'
+        mediaModalToolbar.innerHTML = '<span>Root</span>'
+        
+        let selectedItem = null
+        mediaModalSelectBtn.onclick = () => {
+            pickMediaModal.classList.add('hidden')
+            res(selectedItem.dataset.filename)
+        }
+
+        const createLink = (text, action) => {
+            const link = createEl('a')
+            link.innerText = text
+            link.href = "javascript:void(0)"
+            link.onclick = () => {
+                if (Array.from(mediaModalToolbar.children).at(-1) === link) return;
+                let next = link.nextSibling
+                while (next) {
+                    const toRemove = next
+                    next = next.nextSibling
+                    toRemove.remove()
+                }
+                action?.()
+            }
+            const img = new Image()
+            img.src = "https://torok.ing/songplayer/icons/chevron_right.svg"
+            mediaModalToolbar.appendChild(img)
+            mediaModalToolbar.appendChild(link)
+        }
+
+        const start = async (t, json, albumName, addLink = true) => {
+            if (t) {
+                if (!json) {
+                    const res = await fetch('https://torok.ing/songplayer/media/' + t)
+                    json = await res.json()
+                }
+                if (addLink) {
+                    createLink(albumName || t, () => {
+                        start(t, json, null, false)
+                    })
+                }
+
+                if (t === "albumcovers" && !albumName) {
+                    const albums = {};
+                    Object.values(json).forEach(v=>{
+                        Object.keys(v.used_in_albums).forEach(album=>{
+                            const defaultName = album.default && v.filename
+                            if (!albums[album]) albums[album] = "image/genericalbumcover.jpg"
+                            if (defaultName) albums[album] = defaultName
+                        })
+                    })
+                    const dataForRendering = []
+                    Object.entries(albums).forEach(([albumName, defaultImage])=>{
+                        dataForRendering.push({
+                            original_filename: albumName,
+                            filename: defaultImage,
+                            action: () => {
+                                start(t, json, albumName)
+                            }
+                        })
+                    })
+                    renderData(dataForRendering)
+                } else if (t === "albumcovers" && albumName) {
+                    const albums = {};
+                    Object.values(json).forEach(v=>{
+                        Object.keys(v.used_in_albums).forEach(album=>{
+                            if (album === albumName) albums[album] = v
+                        })
+                    })
+                    const dataForRendering = []
+                    Object.entries(albums).forEach(([albumName, data])=>{
+                        dataForRendering.push({
+                            original_filename: data.original_filename,
+                            filename: "albumcovers/" + data.filename
+                        })
+                    })
+                    renderData(dataForRendering)
+                } else {
+                    json = Object.values(json)
+                    json = json.map(v=>{
+                        return {
+                            ...v,
+                            filename: t + '/' + v.filename
+                        }
+                    })
+                    renderData(json)
+                }
+            } else {
+                renderData()
+            }
+        }
+
+        const renderData = (items) => {
+            actionsMediaModal.classList.add('hidden')
+            if (items) {
+                items.sort((a,b)=>{
+                    const dateA = new Date(a.date_uploaded)
+                    const dateB = new Date(b.date_uploaded)
+                    return dateB - dateA;
+                });
+            } else {
+                mediaModalToolbar.innerHTML = '<a>Root</a>';
+                const a = mediaModalToolbar.querySelector('a')
+                a.href = "javascript:void(0)"
+                a.onclick = () => renderData()
+                items = [
+                    {
+                        original_filename: "Songs",
+                        filename: "icons/songs.svg",
+                        action: ()=>{start("songs")}
+                    },
+                    {
+                        original_filename: "Album Covers",
+                        filename: "icons/albumcovers.svg",
+                        action: ()=>{start("albumcovers")}
+                    },
+                    {
+                        original_filename: "Playlist Covers",
+                        filename: "icons/playlistarts.svg",
+                        action: ()=>{start("playlistarts")}
+                    },        
+                    {
+                        original_filename: "Fullscreen Bgs",
+                        filename: "icons/images.svg",
+                        action: ()=>{start("songs")}
+                    },
+                ]
+            }
+            mediaModalBottom.innerHTML = ''
+            items.forEach(itemData=>{
+                const item = createEl('div','media-item')
+                const img = new Image()
+                const span = createEl('span')
+                span.innerText = itemData.original_filename || itemData.filename
+                img.src = itemData.filename
+                item.dataset.filename = itemData.filename.split('/').at(-1)
+                item.appendChild(img)
+                item.appendChild(span)
+                item.onclick = () => {
+                    if (itemData.action) {
+                        itemData.action()
+                        return;
+                    }
+                    if (!type) return;
+                    if (selectedItem) selectedItem.classList.remove('selected')
+                    item.classList.add('selected')
+                    selectedItem = item
+                    actionsMediaModal.classList.remove('hidden')
+                }
+                mediaModalBottom.appendChild(item)
+            })
+        }
+
+        start(type)
+    })
+} 
+
+async function fetchSongMetadata(songid) {
+    return new Promise((resolve, reject) => {
+        fetch('https://torok.ing/songplayer/song/' + songid + '/fill_metadata').then(a=>a.json()).then(data=>{
+            if (data.success) {
+                resolve(data.data)
+            } else {
+                reject(data.data) // yes, data.data
+            }
+        }).catch(reject)
+    })
+}
+
+async function fetchSongCoverUrls(songid) {
+    return new Promise((resolve, reject) => {
+        fetch('https://torok.ing/songplayer/song/' + songid + '/cover_urls').then(a=>a.json()).then(data=>{
+            if (data.success) {
+                Object.keys(data.data).forEach(key=>{
+                    data.data[key] = data.data[key].replace('http://', 'https://')
+                })
+                resolve(data.data)
+            } else {
+                reject(data.error)
+            }
+        }).catch(reject)
+    })
+}
+
+function updateTrackDevice(song, metadata, store) {
+    if (!store) store = {};
+    Object.assign(song, metadata);
+    if (songsOnDevice.has(song.id)) {
+        const transaction = db.transaction('songs','readwrite')
+        transaction.objectStore('songs').put({
+            ...song,
+            id: song.id,
+            album_cover: store.albumCoverForStore,
+            fullscreenbg: store.fullscreenBgForStore,
+            title: metadata.title,
+            artist: metadata.artist,
+            album: metadata.album,
+            modified: new Date().toISOString()
+        })
+    }
+}
+
+async function updateTrack(song, metadata, store) {
+    return new Promise((res,rej)=>{
+        if (songStatuses[song.id] !== "local") {
+            fetch('https://torok.ing/songplayer/', { 
+                method: 'PATCH',
+                headers: { "Content-Type": "application/json"},
+                body: JSON.stringify({
+                    "action": "update_song",
+                    "song_id": song.id,
+                    "metadata": metadata
+                }), 
+                credentials: 'include'
+            }).then(r=>r.json()).then(data=>{
+                if (data.success) {
+                    updateTrackDevice(song, metadata, store);
+                    res()
+                }
+                else rej(data.error)
+            }).catch(rej)
+        } else {
+            updateTrackDevice(song, metadata, store);
+        }
+    })
+}
+
 async function openEditSongModal(song) {
     const data = [
         [editSongModalTitle, song.title],
@@ -1725,6 +2042,8 @@ async function openEditSongModal(song) {
     });
     editSongModalID.innerText = song.id;
 
+    let foundAlbumCoverUrl = null;
+    let foundFullscreenBgUrl = null;
     function setDefaultArt() {
         modalSongAlbumCover.src = getAlbumCoverForTrack(song)
         if (isVideo) {
@@ -1738,6 +2057,15 @@ async function openEditSongModal(song) {
         }
         changeAlbumCoverInput.value = '';
         changeFullscreenBgInput.value = '';
+        foundAlbumCoverUrl = null;
+        foundFullscreenBgUrl = null;
+    }
+
+    function showError(text) {
+        editSongModalError.classList.remove('hidden')
+        editSongModalError.innerText = text
+        editSongModalSaveBtn.disabled = false;
+        editSongModalRevertBtn.disabled = false;
     }
 
     const isVideo = song.fullscreenbg && song.fullscreenbg.match(/\.(mp4|webm|mov)$/i); // Get it from online!
@@ -1756,17 +2084,33 @@ async function openEditSongModal(song) {
     editSongModalSaveBtn.onclick = async () => {
         if (songStatuses[song.id] !== "local" && !navigator.onLine) return customAlert("Connect to the World Wide Web to edit this song's metadata", "error")
 
+        editSongModalError.classList.add('hidden')
         editSongModalSaveBtn.disabled = true;
         editSongModalRevertBtn.disabled = true;
 
         const metadata = {
             title: editSongModalTitle.value,
             artist: editSongModalArtist.value,
-            album: editSongModalAlbum.value
+            album: editSongModalAlbum.value,
         }
 
-        let albumCoverForStore = song.album_cover
-        let fullscreenBgForStore = song.fullscreenbg
+        let albumCoverForStore =  song.album_cover
+        let fullscreenBgForStore =  song.fullscreenbg
+
+        if (foundAlbumCoverUrl) {
+            metadata.album_cover = foundAlbumCoverUrl;
+            const resp = await fetch(foundAlbumCoverUrl)
+            const blob = await resp.blob()
+            albumCoverForStore = blob;
+        }
+        if (foundFullscreenBgUrl) {
+            metadata.fullscreenbg = foundFullscreenBgUrl;
+            const resp = await fetch(foundFullscreenBgUrl)
+            const blob = await resp.blob()
+            fullscreenBgForStore = blob;
+        }
+        foundAlbumCoverUrl = null;
+        foundFullscreenBgUrl = null;
 
         if (albumCoverReset) {
             metadata.album_cover = '';
@@ -1778,55 +2122,75 @@ async function openEditSongModal(song) {
         }
 
         if (!albumCoverReset && changeAlbumCoverInput.files && changeAlbumCoverInput.files[0]) {
-            if (songStatuses[song.id] !== "local") metadata.album_cover = await uploadMedia(changeAlbumCoverInput.files[0], "album_cover")
+            if (songStatuses[song.id] !== "local") {
+                metadata.album_cover = await uploadMedia(changeAlbumCoverInput.files[0], "album_cover").catch(showError)
+            }
             albumCoverForStore = changeAlbumCoverInput.files[0]
         }
         if (!fullscreenBgReset && changeFullscreenBgInput.files && changeFullscreenBgInput.files[0]) {
-            if (songStatuses[song.id] !== "local") metadata.fullscreenbg = await uploadMedia(changeFullscreenBgInput.files[0], "fullscreenbg")
+            if (songStatuses[song.id] !== "local") {
+                metadata.fullscreenbg = await uploadMedia(changeFullscreenBgInput.files[0], "fullscreenbg").catch(showError)
+            }
             fullscreenBgForStore = changeFullscreenBgInput.files[0]
         }
 
-        function updateTrackDevice() {
-            Object.assign(song, metadata);
-            if (songsOnDevice.has(song.id)) {
-                const transaction = db.transaction('songs','readwrite')
-                transaction.objectStore('songs').put({
-                    ...song,
-                    id: song.id,
-                    album_cover: albumCoverForStore,
-                    fullscreenbg: fullscreenBgForStore,
-                    title: metadata.title,
-                    artist: metadata.artist,
-                    album: metadata.album,
-                    modified: new Date().toISOString()
-                })
-            }    
-            editSongModalUnsaved.classList.add('hidden');
-            if (currentlyViewingPlaylist.song_ids.find(id => id === song.id)) selectPlaylist(currentlyViewingPlaylist.id);
+        const store = {
+            albumCoverForStore, fullscreenBgForStore
         }
 
-        if (songStatuses[song.id] !== "local") {
-            const response = await fetch('https://torok.ing/songplayer/', { 
-                method: 'PATCH',
-                headers: { "Content-Type": "application/json"},
-                body: JSON.stringify({
-                    "action": "update_song",
-                    "song_id": song.id,
-                    "metadata": metadata
-                }), 
-                credentials: 'include'
-            });
-            const data = await response.json();
-            if (data.success) {
-                updateTrackDevice();
-            } else {
-                customAlert(data.error, 'error')
-                editSongModalRevertBtn.click();
+        updateTrack(song, metadata, store).catch(err=>customAlert(err, 'error')).finally(()=>{
+            editSongModalSaveBtn.disabled = false;
+            editSongModalRevertBtn.disabled = false;
+            editSongModalUnsaved.classList.add('hidden');
+            if (currentlyViewingPlaylist.song_ids.find(id => id === song.id)) selectPlaylist(currentlyViewingPlaylist.id);
+        })
+    }
+
+    editSongModalFindBtn.onclick = () => {
+        editSongModalFindBtn.classList.add('disabled')
+        editSongModalFindBtnIcon.classList.add('fa-spin')
+        editSongModalFindBtnIcon.classList.remove('fa-search')
+        fetchSongMetadata(song.id).then(data=>{
+            editSongModalTitle.value = data.title || song.title
+            editSongModalArtist.value = data.artist || song.artist
+            editSongModalAlbum.value = data.album || song.album
+            editSongModalUnsaved.classList.remove('hidden');
+        }).catch(err=>{
+            customAlert(err, 'error')
+        }).finally(()=>{
+            editSongModalFindBtn.classList.remove('disabled')
+            editSongModalFindBtnIcon.classList.remove('fa-spin')
+            editSongModalFindBtnIcon.classList.add('fa-search')
+        })
+    }
+
+    editSongModalFindArtBtn.onclick = () => {
+        editSongModalFindArtBtn.classList.add('disabled')
+        editSongModalFindArtBtnIcon.classList.add('fa-spin')
+        editSongModalFindArtBtnIcon.classList.remove('fa-search')
+        fetchSongCoverUrls(song.id).then(data=>{
+            if (data.album_cover_url) {
+                foundAlbumCoverUrl = data.album_cover_url;
+                modalSongAlbumCover.src = foundAlbumCoverUrl;
+                changeAlbumCoverInput.value = '';
+                albumCoverReset = false;
             }
-        } else updateTrackDevice();
-        
-        editSongModalSaveBtn.disabled = false;
-        editSongModalRevertBtn.disabled = false;
+            if (data.thumbnail_url) {
+                foundFullscreenBgUrl = data.thumbnail_url;
+                modalFullscreenBgImg.src = foundFullscreenBgUrl;
+                modalFullscreenBgVideo.classList.add('hidden');
+                modalFullscreenBgImg.classList.remove('hidden');
+                changeFullscreenBgInput.value = '';
+                fullscreenBgReset = false;
+            }
+            editSongModalUnsaved.classList.remove('hidden');
+        }).catch(err=>{
+            customAlert(err, 'error')
+        }).finally(()=>{
+            editSongModalFindArtBtn.classList.remove('disabled')
+            editSongModalFindArtBtnIcon.classList.remove('fa-spin')
+            editSongModalFindArtBtnIcon.classList.add('fa-search')
+        })
     }
 }
 
@@ -1851,8 +2215,18 @@ async function openEditPlaylistModal(playlist) {
 
     const pOnDevice = await getIdFromDb(playlist.id)
 
+    function showError(text) {
+        editPlaylistModalError.classList.remove('hidden')
+        editPlaylistModalError.innerText = text
+        editPlaylistModalSaveBtn.disabled = false;
+        editPlaylistModalRevertBtn.disabled = false;
+    }
+
     function setDefaultArt() {
-        modalPlaylistCover.src = pOnDevice ? URL.createObjectURL(pOnDevice.playlist_art) : playlist.playlist_art || 'https://torok.ing/songplayer/image/allsongsart.jpg'
+        let artSrc = 'https://torok.ing/songplayer/image/allsongsart.jpg'
+        if (pOnDevice) artSrc =  URL.createObjectURL(pOnDevice.playlist_art);
+        else if (playlist.playlist_art) artSrc = 'playlistarts/' + playlist.playlist_art
+        modalPlaylistCover.src = artSrc
         changePlaylistCoverInput.value = '';
     }
 
@@ -1884,7 +2258,9 @@ async function openEditPlaylistModal(playlist) {
         }
 
         if (!playlistCoverReset && changePlaylistCoverInput.files && changePlaylistCoverInput.files[0]) {
-            if (loggedIn) metadata.playlist_art = await uploadMedia(changePlaylistCoverInput.files[0], "playlist_art")
+            if (loggedIn) {
+                metadata.playlist_art = await uploadMedia(changePlaylistCoverInput.files[0], "playlist_art").catch(showError)
+            }
             playlistCoverForStore = changePlaylistCoverInput.files[0]
         }
 
@@ -1926,6 +2302,69 @@ async function openEditPlaylistModal(playlist) {
         editPlaylistModalSaveBtn.disabled = false;
         editPlaylistModalRevertBtn.disabled = false;
     }
+}
+
+function selectedSongUpdate(songid, selected) {
+    selectedSongIds[selected ? 'add' : 'delete'](songid)
+    playlistHeaderItemCount.innerText = selectedSongIds.size + ' items selected'
+}
+
+function startSelectingSongs() {
+    selectingSongs = true;
+    playlistHeaderSelected.classList.remove('hidden')
+    playlistHeaderItemCount.innerText = '0 items selected'
+    document.querySelectorAll('#onlinePlaylist li').forEach(li=>{
+        li.style.gridTemplateColumns = '20px 40px 3fr 2fr 150px 50px 30px'
+        li.querySelector('.track-checkbox').classList.remove('hidden')
+    })
+}
+
+playlistHeaderFindMetadataBtn.onclick = async () => {
+    if (selectedSongIds.size === 0) return;
+    const results = await Promise.all(Array.from(selectedSongIds).map(id=>{
+        return new Promise((res,rej)=>{
+            const song = songs.find(s=>s.id===id)
+            if (!song) res("No song found")
+            fetchSongMetadata(id).then(data=>{
+                const metadata = {
+                    title: data.title,
+                    artist: data.artist,
+                    album: data.album
+                }
+                updateTrack(song, metadata).catch(res).then(()=>res(false))
+            }).catch(res)
+        })
+    }))
+    const errors = results.filter(Boolean)
+    const successCount = results.length - errors.length
+    customAlert(successCount + '/' + results.length + ' tracks had their metadata updated', 'success')
+    errors.forEach(err=>{
+        customAlert(err, 'error')
+    })
+    selectPlaylist(currentlyViewingPlaylist.id)
+}
+
+playlistHeaderFindArtBtn.onclick = () => {
+
+}
+
+playlistHeaderDeleteBtn.onclick = () => {
+    if (selectedSongIds.size === 0) return;
+    startDeleteSongs(Array.from(selectedSongIds))
+    selectedSongIds.clear()
+    playlistHeaderItemCount.innerText = '0 items selected'
+}
+
+playlistHeaderDoneBtn.onclick = () => {
+    selectingSongs = false;
+    selectedSongIds.clear()
+    playlistHeaderSelected.classList.add('hidden')
+    document.querySelectorAll('#onlinePlaylist li').forEach(li=>{
+        li.style.gridTemplateColumns = '40px 3fr 2fr 150px 50px 30px'
+        const checkbox = li.querySelector('.track-checkbox')
+        checkbox.classList.add('hidden')
+        checkbox.checked = false
+    })
 }
 
 document.addEventListener('touchend', cancel);
@@ -1972,6 +2411,16 @@ document.addEventListener('contextmenu',(ev)=>{
         })
     } else if (!isAllSongsPlaylist) {
         let song = songs.find(s=>s.id === id)
+        base.push({
+            label: "Select",
+            icon: "fas fa-check",
+            action: () => {
+                document.querySelector('#onlinePlaylist li[data-id="' + id + '"] .track-checkbox').checked = true
+                startSelectingSongs()
+                selectedSongUpdate(id, true)
+            }
+        })
+        base.push("hr")
         if (songOwnership[id] && songOwnership[id] !== userid && songStatuses[id] !== "local") {
             base.push({
                 label: "This song is owned by userid " + songOwnership[id],
@@ -2074,16 +2523,7 @@ document.addEventListener('contextmenu',(ev)=>{
             label: songOwnership[id] === userid || !songOwnership[id] ? "Delete song" : "Remove from library",
             icon: "fas fa-trash",
             action: () => {
-                const body = createEl('div')
-                body.innerText = "Are you sure you want to delete this song?"
-                showAModal("Confirm delete", body, {
-                    okButtonAction: () => {
-                        requestAnimationFrame(() => {
-                            deleteSong(id)
-                        })
-                    },
-                    buttons: true
-                })
+                startDeleteSongs([id])
             },
             danger: true
         })
@@ -2302,15 +2742,8 @@ function sendControlUpdate(k,v) {
             v: audio.currentTime
         })
 }
-function listenAlongVisibility(vis) {
-    if (vis) {
-
-    } else {
-
-    }
-}
 function connectWs() {
-    if ((!Prefrences.connectToWs && !document.location.search.includes('li')) || (ws.ws && ws.ws.readyState !== WebSocket.CLOSED)) return;
+    if (((!Prefrences.connectToWs || !loggedIn) && !document.location.search.includes('li')) || (ws.ws && ws.ws.readyState !== WebSocket.CLOSED)) return;
     ws.ws = new WebSocket('https://torok.ing/ws/skibskib')
     const sock = ws.ws
     sock.onopen = () => {        
@@ -2333,7 +2766,7 @@ function connectWs() {
         sendControlUpdate("repeatMode", repeatMode)
         sendControlUpdate("volume", audio.volume)
         refreshDeviceList();
-        updateMetadataWs(currentlyPlayingSong)
+        updateMetadataWs(currentlyPlayingSong?.id)
         
         const params = new URLSearchParams(document.location.search);
         const li = params.get('li');
@@ -2360,8 +2793,9 @@ function connectWs() {
 }
 async function updateMetadataWs(songid) {
     const metadata = songs.find(s=>s.id === songid)
-    const sock = ws.ws
-    if (!sock || sock.readyState !== WebSocket.OPEN || ws.connectedUser) return;
+    if (!metadata) return;
+    const sockOpen = ws.ws && ws.ws.readyState === WebSocket.OPEN
+    if (!sockOpen || ws.connectedUser) return;
     let metadataToSend = {...metadata, sendTime: new Date().getTime(), currentProgress: audio.currentTime}
     if (songStatuses[metadata.id] === "local") {
         sendWsMessage({
