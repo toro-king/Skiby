@@ -57,6 +57,10 @@
   border-bottom: 1px solid #333;
 }
 
+.playlist-header button {
+  padding: 8px;
+}
+
 .three-dots-button {
   background: none;
   border: none;

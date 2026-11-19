@@ -24,6 +24,7 @@ const progressBar = $('progressBar')
 const currentTimeSpan = $('currentTime')
 
 let currentMode;
+let changedMode = false;
 
 function createEl(name,classs) {
     const el = document.createElement(name)
@@ -214,6 +215,7 @@ function mode3() {
             display: flex;
             align-items: center;
             flex-direction: row;
+            flex-grow:1;
         }
 
         .now-playing {
@@ -254,6 +256,11 @@ function mode3() {
             display: flex;
         }
 
+        .bottom-progress {
+            height: 1px;
+            border-top: 1px solid white;
+        }
+
         @media (max-width: 420px) {
             #shuffleBtn, #repeatBtn, #shuffleIndicator, #repeatIndicator {
                 display: none;
@@ -281,13 +288,25 @@ function mode3() {
     songInfo.appendChild(songArtist)
     const playerControls = makePlayerControls()
     footer.appendChild(playerControls)
+
+    const bottomProgress = createEl('div','bottom-progress')
+    document.body.prepend(bottomProgress)
+    function updateProgress() {
+        if (changedMode) return;
+        bottomProgress.style.width = progressBar.value + '%';
+        requestAnimationFrame(updateProgress)
+    }
+    changedMode = false;
+    requestAnimationFrame(updateProgress)
 }
 
 function switchMode(mode) {
     if (mode === currentMode) return;
     currentMode = mode;
+    changedMode = true;
     const func = window['mode' + Number(mode)]
     document.head.querySelectorAll('.css').forEach(el => el.remove())
+    document.querySelector('.bottom-progress')?.remove()
     if (mode !== "0") {
         const css = createEl('style','css')
         css.textContent = `
@@ -295,6 +314,9 @@ function switchMode(mode) {
                 background: linear-gradient(#202124, #121212);
                 overflow: hidden;
                 font-family: 'Roboto', sans-serif;
+                display: flex;
+                flex-direction: column;
+                height: 100vh;
             }
 
             .footer {

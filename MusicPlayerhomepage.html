@@ -80,7 +80,7 @@
         </div>
         <hr>
         <h2>Interested?</h2>
-        <button onclick="window.location.href = 'https:\/\/torok.ing/songplayer/MusicPlayernew.html'">Open App</button>
+        <button onclick="window.location.href = '/app'">Open App</button>
     </div>
     <div id="onlineSection" class="section hidden" style="padding:20px;">
         <h1>FAQ</h1>
@@ -114,7 +114,7 @@ function switchMode(mode,id) {
 homeMode.onclick=()=>switchMode('Home');
 onlineMode.onclick=()=>switchMode('Library');
 
-openAppButton.onclick=()=>window.location.href='https://torok.ing/songplayer/MusicPlayernew.html';
+openAppButton.onclick=()=>window.location.href='/app';
 
 AccountInjection.inject($('navRight'))
 

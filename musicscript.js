@@ -1,3 +1,4 @@
+// TODO: Add online audio streams, add playback rate controls, and fix Find Art.
 /*
 
 Skiby: JavaScript rewrite
@@ -16,11 +17,6 @@ And probably others...
 */
 let parseBlob;
 (async ()=>{parseBlob = (await import('https://cdn.jsdelivr.net/npm/music-metadata@11.0.0/+esm')).parseBlob})()
-
-if (location.host === 'powop.cfd') {
-    fetch('https://torok.ing/auth/login/demo')
-    alert("This site is a mirror of Skiby.app and you will be logged in with a demo toroking account. Head to https://skiby.app for the real deal")
-}
 
 const $ = (id) => document.getElementById(id)
 // Const hell
@@ -148,11 +144,8 @@ const sidbarOberlay = $('overlay')
 
 const playlistHeaderSelected = $('playlist-header-selected')
 const playlistHeaderItemCount = $('playlist-header-item-count')
-const playlistHeaderFindMetadataBtn = $('playlist-header-find-metadata-btn')
-const playlistHeaderFindMetadataBtnIcon = $('playlist-header-find-metadata-btn-icon')
-const playlistHeaderFindArtBtn = $('playlist-header-find-art-btn')
-const playlistHeaderFindArtBtnIcon = $('playlist-header-find-art-btn-icon')
-const playlistHeaderDeleteBtn = $('playlist-header-delete-btn')
+const playlistHeaderFindDrop = $('playlist-header-find-metadata-btn')
+const playlistHeaderRemoveDrop = $('playlist-header-delete-btn')
 const playlistHeaderDoneBtn = $('playlist-header-done-btn')
 
 const uploadArea = $('onlineUploadArea')
@@ -1426,14 +1419,14 @@ function addSongsToPlaylist(ids, playlistid) {
     add()
 }
 
-function removeSongFromPlaylist(songid, playlistid) {
+function removeSongFromPlaylist(songids, playlistid) {
     const playlist = playlists.find(p=>p.id === playlistid)
-    if (!playlist) return;    
-    if (songStatuses[songid] !== "local" && !navigator.onLine) {
+    if (!playlist) return;
+    if (Array.from(songids).some(id=>songStatuses[id] !== "local") && !navigator.onLine) {
         customAlert("One or more songs you're trying to remove from " + playlist.name + " are not available offline. Connect to the World Wide Web to remove it.", "error")
         return;
     }
-    playlist.song_ids = playlist.song_ids.filter(id=>id !== songid)
+    playlist.song_ids = playlist.song_ids.filter(id=>!songids.has(id))
     if (playlistid === currentlyViewingPlaylist.id) selectPlaylist(playlistid)
     queueAction("update_playlist", playlist.id)
 }
@@ -1543,12 +1536,12 @@ async function uploadSongToServer(id) {
         if (!song) return res()
 
         updateSongStatusIcon(id, 'loading')
-
+    
         uploadMedia(song.filename, "song", [
             {name: "preferred_id", value: song.id}
         ]).then(filename=>{
             songStatuses[id] = "downloaded"
-            updateSongStatusIcon(id, 'downloaded')
+            updateSongStatusIcon(id, 'local')
             const song = songs.find(s=>s.id === id)
             song.filename = filename
             songOwnership[id] = userid
@@ -1981,19 +1974,17 @@ async function fetchSongCoverUrls(songid) {
 
 function updateTrackDevice(song, metadata, store) {
     if (!store) store = {};
+    metadata=JSON.parse(JSON.stringify(metadata))
     Object.assign(song, metadata);
     if (songsOnDevice.has(song.id)) {
         const transaction = db.transaction('songs','readwrite')
-        transaction.objectStore('songs').put({
+        const newObj = {
             ...song,
-            id: song.id,
-            album_cover: store.albumCoverForStore,
-            fullscreenbg: store.fullscreenBgForStore,
-            title: metadata.title,
-            artist: metadata.artist,
-            album: metadata.album,
             modified: new Date().toISOString()
-        })
+        }
+        if (store.albumCoverForStore) newObj["album_cover"] = store.albumCoverForStore
+        if (store.fullscreenBgForStore) newObj["fullscreenbg"] = store.fullscreenBgForStore
+        transaction.objectStore('songs').put(newObj)
     }
 }
 
@@ -2018,6 +2009,7 @@ async function updateTrack(song, metadata, store) {
             }).catch(rej)
         } else {
             updateTrackDevice(song, metadata, store);
+            res()
         }
     })
 }
@@ -2319,40 +2311,80 @@ function startSelectingSongs() {
     })
 }
 
-playlistHeaderFindMetadataBtn.onclick = async () => {
+playlistHeaderFindDrop.onclick = (ev) => {
     if (selectedSongIds.size === 0) return;
-    const results = await Promise.all(Array.from(selectedSongIds).map(id=>{
-        return new Promise((res,rej)=>{
-            const song = songs.find(s=>s.id===id)
-            if (!song) res("No song found")
-            fetchSongMetadata(id).then(data=>{
-                const metadata = {
+    async function metadataUpdate(t) {
+        const results = await Promise.all(Array.from(selectedSongIds).map(id=>{
+            return new Promise(async (res,rej)=>{
+                const song = songs.find(s=>s.id===id)
+                if (!song) return res("No song found")
+                const data = await (t === "art" ? fetchSongCoverUrls(id) : fetchSongMetadata(id)).catch((err)=>err)
+                if (typeof data !== "object") return res(data)
+                let metadata = {
                     title: data.title,
                     artist: data.artist,
-                    album: data.album
+                    album: data.album,
+                    album_cover: data.album_cover_url,
+                    fullscreenbg: data.thumbnail_url
                 }
-                updateTrack(song, metadata).catch(res).then(()=>res(false))
-            }).catch(res)
+                const store = {};
+                if (data.album_cover_url) store["albumCoverForStore"] = await fetch(data.album_cover_url).then(r => r.blob()).catch(()=>{})
+                if (data.thumbnail_url) store["fullscreenBgForStore"] = await fetch(data.thumbnail_url).then(r => r.blob()).catch(()=>{})
+                updateTrack(song, metadata, store).catch(res).then(()=>res(false))
+            })
+        }))
+        const errors = results.filter(Boolean)
+        const successCount = results.length - errors.length
+        customAlert(successCount + '/' + results.length + ` tracks had their ${t} updated`, 'success')
+        errors.forEach(err=>{
+            customAlert(err, 'error')
         })
-    }))
-    const errors = results.filter(Boolean)
-    const successCount = results.length - errors.length
-    customAlert(successCount + '/' + results.length + ' tracks had their metadata updated', 'success')
-    errors.forEach(err=>{
-        customAlert(err, 'error')
-    })
-    selectPlaylist(currentlyViewingPlaylist.id)
+        selectPlaylist(currentlyViewingPlaylist.id)
+    }
+    const items = [
+        {
+            label: "Find Metadata",
+            icon: "fas fa-search",
+            action: () => {
+                metadataUpdate("metadata")
+            }
+        },
+        {
+            label: "Find Art",
+            icon: "fas fa-search",
+            action: () => {
+                metadataUpdate("art")   
+            }
+        }
+    ]
+    showContextMenu(ev, items, ev)
 }
 
-playlistHeaderFindArtBtn.onclick = () => {
-
-}
-
-playlistHeaderDeleteBtn.onclick = () => {
+playlistHeaderRemoveDrop.onclick = (ev) => {
     if (selectedSongIds.size === 0) return;
-    startDeleteSongs(Array.from(selectedSongIds))
-    selectedSongIds.clear()
-    playlistHeaderItemCount.innerText = '0 items selected'
+    const items = [
+        {
+            label: "Delete",
+            icon: "fas fa-trash",
+            danger: true,
+            action: async () => {
+                startDeleteSongs(Array.from(selectedSongIds))
+                selectedSongIds.clear()
+                playlistHeaderItemCount.innerText = '0 items selected'
+            }
+        },
+        {
+            label: "Remove from playlist",
+            icon: "fas fa-minus",
+            danger: true,
+            action: () => {
+                removeSongFromPlaylist(selectedSongIds, currentlyViewingPlaylist.id)
+                selectedSongIds.clear()
+                playlistHeaderItemCount.innerText = '0 items selected'
+            }
+        }
+    ]
+    showContextMenu(ev, items, ev)
 }
 
 playlistHeaderDoneBtn.onclick = () => {
@@ -2371,10 +2403,9 @@ document.addEventListener('touchend', cancel);
 document.addEventListener('touchmove', cancel);
 document.addEventListener('touchcancel', cancel);
 
-document.addEventListener('click',(ev)=>{
+document.addEventListener('mousedown',(ev)=>{
     if (ev.target.classList.contains('three-dots-button')) return;
     if (!contextMenu.contains(ev.target)) contextMenu.classList.add('hidden')
-    if (!addPlaylistPopup.contains(ev.target) && !addPlaylistBtn.contains(ev.target)) addPlaylistPopup.classList.add('hidden')
 })
 document.addEventListener('contextmenu',(ev)=>{
     const target = ev.target;
@@ -2513,7 +2544,7 @@ document.addEventListener('contextmenu',(ev)=>{
                     label: "Remove from playlist",
                     icon: "fas fa-minus",
                     action: () => {
-                        removeSongFromPlaylist(id, currentlyViewingPlaylist.id)
+                        removeSongFromPlaylist(new Set([id]), currentlyViewingPlaylist.id)
                     },
                     danger: true
                 })
@@ -2920,3 +2951,68 @@ devicesBackBtn.onclick = () => refreshDeviceList()
 
 if (Prefrences.connectToWs || document.location.search.includes('li')) 
     connectWs();
+;
+// Optional local Discord handoff. Existing public artwork and listen-along links only.
+(() => {
+    if (window.skibyDiscordArtworkInstalled) return;
+    window.skibyDiscordArtworkInstalled = true;
+    let latest = null, busy = false, queued = false, wasEnabled = false;
+    const originalSend = sendWsMessage;
+    sendWsMessage = function (payload) {
+        if (payload?.type === 'metadata_update') latest = payload.metadata;
+        return originalSend.apply(this, arguments);
+    };
+    if (location.hash === '#discord-artwork') {
+        Prefrences.discordRPC = true;
+        localStorage.setItem('songplayerPrefrencesCache', JSON.stringify(Prefrences));
+        history.replaceState(null, '', location.pathname + location.search);
+    }
+    async function sendArtwork() {
+        if (busy) { queued = true; return; }
+        const enabled = Prefrences.discordRPC === true;
+        if (!enabled && !wasEnabled) return;
+        wasEnabled = enabled;
+        const song = currentlyPlayingSong;
+        const connected = ws.ws?.readyState === WebSocket.OPEN;
+        const metadata = ws.connectedUser ? song : latest;
+        const same = metadata && song && metadata.title === song.title && metadata.artist === song.artist;
+        const url = enabled && connected && same ? metadata.album_cover : null;
+        const publicUrl = typeof url === 'string' && /^https:\/\/(?:torok\.ing|(?:www\.)?skiby\.app)\/songplayer\/public\/[a-f0-9-]{36}\.(?:png|jpe?g|webp|gif|avif)$/i.test(url) ? url : null;
+        const publicStream = Prefrences.publicStream === true;
+        const showListenAlongOnRPC = Prefrences.showListenAlongOnRPC === true;
+        // Same URL as createLinkBtn, without enabling public streaming or touching the clipboard.
+        // A subscribed listener must not advertise their own device as the host.
+        const listenAlongUrl = enabled && connected && publicStream && showListenAlongOnRPC &&
+            !ws.connectedUser && typeof userid !== 'undefined' && userid != null && deviceId ?
+            `${location.origin}${location.pathname}?li=${userid}:${deviceId}` : null;
+        busy = true;
+        try {
+            await fetch('http://127.0.0.1:29741/artwork', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                credentials: 'omit', signal: AbortSignal.timeout(2500),
+                body: JSON.stringify(enabled && song ? {
+                    enabled: true, title: song.title || '', artist: song.artist || '',
+                    album: song.album || '', url: publicUrl,
+                    publicStream, showListenAlongOnRPC, connected, listenAlongUrl
+                } : { enabled: false })
+            });
+        } catch { /* The helper is optional; playback must never depend on it. */ }
+        finally {
+            busy = false;
+            if (queued) { queued = false; queueMicrotask(sendArtwork); }
+        }
+    }
+    setInterval(sendArtwork, 5000);
+    // React to sharing/settings/socket changes even when the song and artwork stay unchanged.
+    let previousSharingState = '';
+    setInterval(() => {
+        const sharingState = JSON.stringify([Prefrences.discordRPC, Prefrences.publicStream,
+            Prefrences.showListenAlongOnRPC, ws.ws?.readyState, Boolean(ws.connectedUser),
+            typeof userid === 'undefined' ? null : userid, typeof deviceId === 'undefined' ? null : deviceId]);
+        if (sharingState !== previousSharingState) {
+            previousSharingState = sharingState;
+            void sendArtwork();
+        }
+    }, 1000);
+})();
+
