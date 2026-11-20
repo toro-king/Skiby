@@ -45,6 +45,8 @@ const editSongModalTitle = $('modalSongTitle')
 const editSongModalArtist = $('modalSongArtist')
 const editSongModalAlbum = $('modalSongAlbum')
 const editSongModalID = $('modalSongID')
+const editSongModalPlaybackSpeed = $('modalSongPlaybackSpeed')
+const editSongModalPreservePitch = $('modalSongPreservePitch')
 const editSongModalUnsaved = $('unsavedChangesSongModal')
 const editSongModalRevertBtn = $('songModalRevertBtn')
 const editSongModalSaveBtn = $('songModalSaveBtn')
@@ -120,7 +122,7 @@ const shuffleIndicator = $('shuffleIndicator')
 const repeatBtn = $('repeatBtn');
 const repeatIndicator = $('repeatIndicator')
 const devicesBtn = $('deviceBtn')
-const deviceIndicator = $('deviceIndicator')
+const devicesIndicator = $('deviceIndicator')
 const devicesPopup = $('devicePopup')
 const volumeBtn = $('volumeBtn')
 const volumeSlider = $('volumeSlider');
@@ -255,6 +257,9 @@ let albumCoverReset = false;
 let fullscreenBgReset = false;
 let playlistCoverReset = false;
 
+let currentTrackEffectiveTime = 0;
+let trackResumeTime = 0;
+
 let ws = {
     ws: null,
     connectedUser: null
@@ -263,6 +268,7 @@ let wsBackoff = 1000
 let nextMsgId = 1;
 let deviceId = null;
 let firstConnectToDevice = false;
+let initialTimePositionReq = false;
 
 inject()
 if (playlists) renderPlaylists();
@@ -297,7 +303,11 @@ function restoreSong() {
     if (prev) {
         function functio(song) {
             updateCurrentlyPlayingUI(song)
-            audio.onloadedmetadata = () => audio.currentTime = prev.position || 0;
+            audio.onloadedmetadata = () => {
+                audio.currentTime = prev.position || 0;
+                updateProgress(true)
+                audio.onloadedmetadata = null
+            };
             initializeShuffleQueue()
         }
         if (prev.id) {
@@ -631,6 +641,12 @@ function switchMode(mode,id) {
     if (id) selectPlaylist(id)
 }
 
+function getLogicalTrackLength(song) {
+    const trackSpeed = song.speed?.playbackRate || 1
+    const dictionaryLength = parseTimeToSeconds(song["length"]);
+    return dictionaryLength / trackSpeed
+}
+
 async function startPlayback(id,playlist) {
     currentlyPlayingPlaylist = playlist
     await startTrack(id,playlist)
@@ -667,21 +683,20 @@ function initializeShuffleQueue() {
 function playTrack() {
 	if (!audio.src && !firstConnectToDevice)
         return startPlayback(songs[0].id, playlists[0])
+    if (firstConnectToDevice) {
+        initialTimePositionReq = true;
+        sendWsMessage({type:"request",k:"timePosition"})
+        return;
+    }
     audio.play().then(()=>{
-        if (firstConnectToDevice) {
-            firstConnectToDevice = false
-            sendWsMessage({type:"request",k:"timePosition"})
-        }
         navigator.mediaSession.playbackState = 'playing';
         updatePlayPauseButton();
-    }).catch(()=>{
-        customAlert("Please tap on the screen to enable sound","warning")
     })
 }
 
 document.addEventListener('mousedown',()=>{
     if (firstConnectToDevice) playTrack()
-})
+}, {once:true})
 
 async function getUpNextTrack(del) {
     if (ws.connectedUser) return {}
@@ -709,6 +724,29 @@ async function getUpNextTrack(del) {
     return song
 }
 
+async function updateProgress(once) {
+    const elapsed = audio.currentTime / audio.playbackRate;
+    currentTimeSpan.innerText = formatTime(elapsed);
+    fullscreenCurrentTime.innerText = formatTime(elapsed);
+
+    const percent = audio.currentTime / audio.duration * 100
+    progressBar.value = percent;
+    fullscreenProgressBar.value = percent;
+
+    const upNextTrack = await getUpNextTrack(false)
+    if (repeatMode !== 2 && upNextTrack && (audio.duration - audio.currentTime <= 15)) {
+        upNextSongTitle.innerText = upNextTrack.title;
+        upNextSongArtist.innerText = upNextTrack.artist;
+        if (!upNextAlbumArtBlobUrl) upNextAlbumArtBlobUrl = getAlbumCoverForTrack(upNextTrack) // Sometimes not a blob btw
+        upNextAlbumArt.src = upNextAlbumArtBlobUrl;
+        upNextContainer.classList.remove('hidden');
+    } else upNextContainer.classList.add('hidden');
+
+    if (audio.paused) return;
+    if (once === true) return;
+    requestAnimationFrame(updateProgress);
+}
+
 function tweenSlider(to) {
     async function tweenOne(progressBar) {
         const from = parseFloat(progressBar.value);
@@ -732,29 +770,15 @@ function tweenSlider(to) {
     tweenOne(fullscreenProgressBar);
 }
 
+audio.onplaying = () => {
+    trackResumeTime = new Date() - (audio.currentTime * 1000);
+    updateProgress();
+}
+
 audio.onended = () => {
 	if (repeatMode === 2) playTrack();
     else nextBtn.click();
 }
-async function onTimeUpdate() {
-    if (!audio.duration) return;
-    const progressPercent = (audio.currentTime / audio.duration) * 100;
-
-    currentTimeSpan.innerText = formatTime(audio.currentTime);
-    fullscreenCurrentTime.innerText = formatTime(audio.currentTime);
-
-    tweenSlider(progressPercent);
-
-    const upNextTrack = await getUpNextTrack(false)
-    if (repeatMode !== 2 && upNextTrack && (audio.duration - audio.currentTime <= 15)) {
-        upNextSongTitle.innerText = upNextTrack.title;
-        upNextSongArtist.innerText = upNextTrack.artist;
-        if (!upNextAlbumArtBlobUrl) upNextAlbumArtBlobUrl = getAlbumCoverForTrack(upNextTrack) // Sometimes not a blob btw
-        upNextAlbumArt.src = upNextAlbumArtBlobUrl;
-        upNextContainer.classList.remove('hidden');
-    } else upNextContainer.classList.add('hidden');
-}
-audio.ontimeupdate = onTimeUpdate
 
 function pauseTrack() {
 	if (!audio.paused) audio.pause();
@@ -828,21 +852,23 @@ function updateCurrentlyPlayingUI(song) {
     let albumCoverSrc = getAlbumCoverForTrack(song)
 
     currentlyPlayingSong = song;
+    currentTrackEffectiveTime = getLogicalTrackLength(song)
     updateMetadataWs(song.id);
     highlightCurrentPlaying()
 
-    totalTimeSpan.innerText = song.length || '0:00'
-    fullscreenTotalTime.innerText = song.length || '0:00'
+    totalTimeSpan.innerText = formatTime(currentTrackEffectiveTime) || '0:00'
+    fullscreenTotalTime.innerText = formatTime(currentTrackEffectiveTime) || '0:00'
     currentTimeSpan.innerText = '-:--'
     fullscreenCurrentTime.innerText = '-:--'
 
-    audio.ontimeupdate = null
-    audio.onloadedmetadata = null
+    //audio.ontimeupdate = null
     progressBar.value = 0
     fullscreenProgressBar.value = 0
-    audio.ontimeupdate = onTimeUpdate
+    //audio.ontimeupdate = onTimeUpdate
 
     audio.src = audioSrc;
+    audio.preservesPitch = song.speed?.preservePitch ?? true;
+    audio.playbackRate = song.speed?.playbackRate ?? 1;
     songTitle.innerText = song.title;
     songArtist.innerText = song.artist;
     albumCover.src = albumCoverSrc;
@@ -1082,6 +1108,7 @@ function setActionHandlers() {
 prevBtn.onclick = () => {
     if (ws.connectedUser) return sendSendControlUpdate("prev", null)
     audio.currentTime = 0
+    updateProgress(true)
 }
 playPauseBtn.onclick = () => {
     if (ws.connectedUser) return sendSendControlUpdate("playpause", null)
@@ -1123,6 +1150,7 @@ progressBar.oninput = () => {
     if (ws.connectedUser) return sendSendControlUpdate("timePosition", val)
     else sendControlUpdate("timePosition", val)
     audio.currentTime = val
+    updateProgress(true)
     if (Prefrences.syncVideo && fullscreenBackgroundVideo.src && currentlyPlayingSong.fullscreenbg.match(/\.(mp4|webm|mov)$/i))
         fullscreenBackgroundVideo.currentTime = val
 }
@@ -2018,13 +2046,16 @@ async function openEditSongModal(song) {
     const data = [
         [editSongModalTitle, song.title],
         [editSongModalArtist, song.artist],
-        [editSongModalAlbum, song.album]
+        [editSongModalAlbum, song.album],
+        [editSongModalPreservePitch, song.speed?.preservePitch],
+        [editSongModalPlaybackSpeed, String(song.speed?.playbackRate)]
     ]
     const changedStuff = {}
     data.forEach(([el, val]) => {
-        el.value = val;
+        const property = el.type === "checkbox" ? "checked" : "value"
+        el[property] = val;
         el.onchange = () => {
-            changedStuff[el.id] = el.value === val;                     
+            changedStuff[el.id] = el[property] === val;                     
             if (Object.values(changedStuff).some(v => v === false)) {
                 editSongModalUnsaved.classList.remove('hidden');
             } else {
@@ -2068,7 +2099,10 @@ async function openEditSongModal(song) {
     editSongModal.classList.remove('hidden')
 
     editSongModalRevertBtn.onclick = () => {
-        data.forEach(([el, val]) => el.value = val)
+        data.forEach(([el, val]) => {
+            const property = el.type === "checkbox" ? "checked" : "value"
+            el[property] = val
+        })
         setDefaultArt()
         editSongModalUnsaved.classList.add('hidden');
     }
@@ -2084,6 +2118,10 @@ async function openEditSongModal(song) {
             title: editSongModalTitle.value,
             artist: editSongModalArtist.value,
             album: editSongModalAlbum.value,
+            speed: {
+                playbackRate: Number(editSongModalPlaybackSpeed.value),
+                preservePitch: editSongModalPreservePitch.checked
+            }
         }
 
         let albumCoverForStore =  song.album_cover
@@ -2717,16 +2755,28 @@ function onWsMessage(msg) {
         case "metadata_update": {
             updateCurrentlyPlayingUI(msg.data)
             if (!ws.connectedUser.pause && !firstConnectToDevice) playTrack();
+            if (firstConnectToDevice) customAlert("Please tap on the screen to enable sound","warning")
         } break;
 
         case "control_update": {
             if (ws.connectedUser) {
                 ws.connectedUser[msg.k] = msg.v;
                 switch (msg.k) {
-                    case "pause": if (msg.v) pauseTrack(); else playTrack(); break;
+                    case "pause": {
+                        if (firstConnectToDevice) break;
+                        if (msg.v) pauseTrack(); else playTrack(); 
+                        break;
+                    }
                     case "shuffleMode": isShuffle = msg.v; updateControlBtns(); break;
                     case "repeatMode": repeatMode = msg.v; updateControlBtns(); break;
-                    case "timePosition": audio.currentTime = msg.v; break;
+                    case "timePosition": {
+                        audio.currentTime = msg.v;
+                        if (firstConnectToDevice && initialTimePositionReq) {
+                            firstConnectToDevice = false;
+                            if (!ws.connectedUser.pause) playTrack();
+                        }
+                        break;
+                    }
                     case "volume": volumeSlider.value = msg.v; audio.volume = msg.v; break;
                 }
             } else {
@@ -2986,8 +3036,7 @@ if (Prefrences.connectToWs || document.location.search.includes('li'))
             !ws.connectedUser && typeof userid !== 'undefined' && userid != null && deviceId ?
             `${location.origin}${location.pathname}?li=${userid}:${deviceId}` : null;
         busy = true;
-        try {
-            await fetch('http://127.0.0.1:29741/artwork', {
+        fetch('http://127.0.0.1:29741/artwork', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 credentials: 'omit', signal: AbortSignal.timeout(2500),
                 body: JSON.stringify(enabled && song ? {
@@ -2995,12 +3044,10 @@ if (Prefrences.connectToWs || document.location.search.includes('li'))
                     album: song.album || '', url: publicUrl,
                     publicStream, showListenAlongOnRPC, connected, listenAlongUrl
                 } : { enabled: false })
-            });
-        } catch { /* The helper is optional; playback must never depend on it. */ }
-        finally {
+            }).catch(()=>{}).finally(() => {
             busy = false;
             if (queued) { queued = false; queueMicrotask(sendArtwork); }
-        }
+        })
     }
     setInterval(sendArtwork, 5000);
     // React to sharing/settings/socket changes even when the song and artwork stay unchanged.
