@@ -1,4 +1,4 @@
-// TODO: Add online audio streams, add playback rate controls, and fix Find Art.
+// TODO: Add online audio streams, and fix Find Art.
 /*
 
 Skiby: JavaScript rewrite
@@ -15,6 +15,10 @@ Song metadata extraction on upload
 And probably others...
 
 */
+
+/* global AccountInjection:readonly, customAlert:readonly,
+          showAModal:readonly, showContextMenu:readonly */
+
 let parseBlob;
 (async ()=>{parseBlob = (await import('https://cdn.jsdelivr.net/npm/music-metadata@11.0.0/+esm')).parseBlob})()
 
@@ -62,6 +66,7 @@ const mediaModalUnsaved = $('actionsMediaModal')
 const mediaModalSelectBtn = $('mediaModalSelectBtn')
 const mediaModalToolbar = $('pickMediaModalToolbar')
 const mediaModalBottom = $('pickMediaModalItemList')
+const mediaFileInput = document.getElementById('mediaFileInput');
 
 const changeAlbumCoverBtn = $('changeAlbumCoverBtn')
 const resetAlbumCoverBtn = $('resetAlbumCoverBtn')
@@ -1159,8 +1164,10 @@ devicesBtn.onclick = () => {
     positionPopupOverElement("devices");
 }
 volumeSlider.oninput = () => {
-    if (ws.connectedUser) return sendSendControlUpdate("volume", volumeSlider.value)
-    else sendControlUpdate("volume", volumeSlider.value)
+    if (ws.ws) {
+        if (ws.connectedUser) return sendSendControlUpdate("volume", volumeSlider.value)
+        else sendControlUpdate("volume", volumeSlider.value)
+    }
     audio.volume = volumeSlider.value
 }
 fullscreenBtn.onclick = () => {
@@ -1858,41 +1865,70 @@ async function openMediaModal(type) {
                     })
                 }
 
-                if (t === "albumcovers" && !albumName) {
-                    const albums = {};
-                    Object.values(json).forEach(v=>{
-                        Object.keys(v.used_in_albums).forEach(album=>{
-                            const defaultName = album.default && v.filename
-                            if (!albums[album]) albums[album] = "image/genericalbumcover.jpg"
-                            if (defaultName) albums[album] = defaultName
+                if (t==="albumcovers") {
+                    let dataForRender = []
+                    if (!albumName) {
+                        const albums = {};
+
+                        Object.values(json).forEach(v => {
+                            Object.entries(v.used_in_albums).forEach(([album, info]) => {
+                                if (info.default) albums[album] = "albumcovers/" + v.filename;
+                                else albums[album] ??= "image/genericalbumcover.jpg";
+                            });
+                        });
+
+                        dataForRender = Object.entries(albums).map(([album, filename]) => ({
+                            original_filename: album,
+                            filename,
+                            action: () => start(t, json, album)
+                        }))
+
+                        dataForRender.unshift({
+                            original_filename: "All Album Covers",
+                            filename: "image/genericalbumcover.jpg",
+                            action: () => start(t, json, "All Album Covers")
                         })
-                    })
-                    const dataForRendering = []
-                    Object.entries(albums).forEach(([albumName, defaultImage])=>{
-                        dataForRendering.push({
-                            original_filename: albumName,
-                            filename: defaultImage,
+                        
+                        return renderData(dataForRender)
+                    } else if (albumName === "All Album Covers") {
+                        dataForRender = Object.values(json).map(v => ({
+                            original_filename: v.original_filename,
+                            filename: "albumcovers/" + v.filename
+                        }));
+
+                        dataForRender.unshift({
+                            original_filename: "Upload",
+                            filename: "image/upload.svg",
                             action: () => {
-                                start(t, json, albumName)
+                                mediaFileInput.accept = "image/*";
+                                mediaFileInput.click();
+                                mediaFileInput.onchange = async () => {
+                                    if (mediaFileInput.files.length === 0) return;
+                                    const file = mediaFileInput.files[0];
+                                    try {
+                                        const filename = await uploadMedia(file, "album_cover");
+                                        json[filename] = {
+                                            original_filename: filename,
+                                            filename,
+                                            used_in_albums: {}
+                                        };
+                                        start(t, json, albumName, false);
+                                    } catch (err) {
+                                        customAlert(err.error || "Error uploading album cover", "error");
+                                    }
+                                };
                             }
-                        })
-                    })
-                    renderData(dataForRendering)
-                } else if (t === "albumcovers" && albumName) {
-                    const albums = {};
-                    Object.values(json).forEach(v=>{
-                        Object.keys(v.used_in_albums).forEach(album=>{
-                            if (album === albumName) albums[album] = v
-                        })
-                    })
-                    const dataForRendering = []
-                    Object.entries(albums).forEach(([albumName, data])=>{
-                        dataForRendering.push({
-                            original_filename: data.original_filename,
-                            filename: "albumcovers/" + data.filename
-                        })
-                    })
-                    renderData(dataForRendering)
+                        });
+                    
+                        renderData(dataForRender)
+                    } else if (albumName) {
+                        renderData(Object.values(json)
+                            .filter(v => albumName in v.used_in_albums)
+                            .map(v => ({
+                                original_filename: v.original_filename,
+                                filename: "albumcovers/" + v.filename
+                        })))
+                    }
                 } else {
                     json = Object.values(json)
                     json = json.map(v=>{
@@ -1950,6 +1986,8 @@ async function openMediaModal(type) {
                 const img = new Image()
                 const span = createEl('span')
                 span.innerText = itemData.original_filename || itemData.filename
+                console.log(itemData)
+                img.loading = "lazy"
                 img.src = itemData.filename
                 item.dataset.filename = itemData.filename.split('/').at(-1)
                 item.appendChild(img)
@@ -2003,6 +2041,7 @@ async function fetchSongCoverUrls(songid) {
 function updateTrackDevice(song, metadata, store) {
     if (!store) store = {};
     metadata=JSON.parse(JSON.stringify(metadata))
+    Object.assign(songs.find(s => s.id === song.id), metadata);
     Object.assign(song, metadata);
     if (songsOnDevice.has(song.id)) {
         const transaction = db.transaction('songs','readwrite')
@@ -2014,6 +2053,23 @@ function updateTrackDevice(song, metadata, store) {
         if (store.fullscreenBgForStore) newObj["fullscreenbg"] = store.fullscreenBgForStore
         transaction.objectStore('songs').put(newObj)
     }
+}
+
+async function fetchFilenamesAsBlob(urls) {
+    // must be in format: [albumCoverUrl, fullscreenBgUrl] for now, u can leave one undefined but just remember the idx. holy hacky function 🙏
+    let mappedUrls = ["/songplayer/albumcovers/", "/songplayer/images/"]
+    return await Promise.all(urls.map((url,idx)=>{
+        return new Promise(async (resolve, reject) => {
+            if (!url) return resolve(url);
+            try {
+                const resource = await fetch(mappedUrls[idx] + url);
+                const blob = await resource.blob();
+                resolve(blob);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }));
 }
 
 async function updateTrack(song, metadata, store) {
@@ -2028,8 +2084,16 @@ async function updateTrack(song, metadata, store) {
                     "metadata": metadata
                 }), 
                 credentials: 'include'
-            }).then(r=>r.json()).then(data=>{
+            }).then(r=>r.json()).then(async data=>{
                 if (data.success) {
+                    const blobs = await fetchFilenamesAsBlob([data.updated_shite?.album_cover, data.updated_shite?.fullscreenbg]).catch(err=>{
+                        customAlert("Error fetching resources to put in store: " + err.message + ". Data has been updated on the server but not on this device, please refresh to see changes", "error");
+                    });
+                    Object.entries(data.updated_shite).forEach(async ([key, value])=>{
+                        metadata[key] = value;
+                        if (key === "album_cover" && blobs[0] !== undefined) store.albumCoverForStore = blobs[0];
+                        if (key === "fullscreenbg" && blobs[1] !== undefined) store.fullscreenBgForStore = blobs[1];
+                    })
                     updateTrackDevice(song, metadata, store);
                     res()
                 }
@@ -2065,6 +2129,9 @@ async function openEditSongModal(song) {
     });
     editSongModalID.innerText = song.id;
 
+    let albumCoverFile = null;
+    let fullscreenBgFile = null;
+
     let foundAlbumCoverUrl = null;
     let foundFullscreenBgUrl = null;
     function setDefaultArt() {
@@ -2082,6 +2149,10 @@ async function openEditSongModal(song) {
         changeFullscreenBgInput.value = '';
         foundAlbumCoverUrl = null;
         foundFullscreenBgUrl = null;
+        albumCoverFile = null;
+        fullscreenBgFile = null;
+        albumCoverReset = false;
+        fullscreenBgReset = false;
     }
 
     function showError(text) {
@@ -2095,6 +2166,71 @@ async function openEditSongModal(song) {
     song = songsOnDevice.has(song.id) ? await getIdFromDb(song.id) : song
     setDefaultArt()
     
+    changeAlbumCoverBtn.onclick = async () => {
+        if (songStatuses[song.id] !== "local") {
+            const filename = await openMediaModal("albumcovers")
+            if (filename) {
+                modalSongAlbumCover.src = "https://torok.ing/songplayer/albumcovers/" + filename
+                foundAlbumCoverUrl = filename
+                albumCoverFile = null
+                albumCoverReset = false
+                editSongModalUnsaved.classList.remove('hidden');
+            }
+        } else changeAlbumCoverInput.click();
+    }
+    changeAlbumCoverInput.onchange = async (e) =>{
+        if (e.target.files && e.target.files[0]) {
+            albumCoverFile = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (event) => modalSongAlbumCover.src = event.target.result;
+            reader.readAsDataURL(e.target.files[0]);
+            albumCoverReset = false
+            foundAlbumCoverUrl = null
+            editSongModalUnsaved.classList.remove('hidden');
+        }
+    };
+
+    changeFullscreenBgBtn.onclick = () => changeFullscreenBgInput.click();
+    changeFullscreenBgInput.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const isVideo = file.type.startsWith('video/');
+                if (isVideo) {
+                    modalFullscreenBgVideo.src = event.target.result;
+                    modalFullscreenBgVideo.classList.remove('hidden');
+                    modalFullscreenBgImg.classList.add('hidden');
+                } else {
+                    modalFullscreenBgImg.src = event.target.result;
+                    modalFullscreenBgImg.classList.remove('hidden');
+                    modalFullscreenBgVideo.classList.add('hidden');
+                }
+            };
+            reader.readAsDataURL(file);
+            fullscreenBgReset = false;
+            editSongModalUnsaved.classList.remove('hidden');
+            fullscreenBgFile = file;
+        }
+    };
+
+    resetAlbumCoverBtn.onclick = () => {
+        modalSongAlbumCover.src = 'https://torok.ing/songplayer/image/genericalbumcover.jpg';
+        albumCoverReset = true;
+        foundAlbumCoverUrl = null;
+        changeAlbumCoverInput.value = '';
+        editSongModalUnsaved.classList.remove('hidden');
+    };
+
+    resetFullscreenBgBtn.onclick = () => {
+        modalFullscreenBgImg.src = randomFullscreenBg();
+        modalFullscreenBgImg.classList.remove('hidden');
+        modalFullscreenBgVideo.classList.add('hidden');
+        fullscreenBgReset = true;
+        changeFullscreenBgInput.value = '';
+        editSongModalUnsaved.classList.remove('hidden');
+    };
+
     editSongModalUnsaved.classList.add('hidden');
     editSongModal.classList.remove('hidden')
 
@@ -2127,18 +2263,8 @@ async function openEditSongModal(song) {
         let albumCoverForStore =  song.album_cover
         let fullscreenBgForStore =  song.fullscreenbg
 
-        if (foundAlbumCoverUrl) {
-            metadata.album_cover = foundAlbumCoverUrl;
-            const resp = await fetch(foundAlbumCoverUrl)
-            const blob = await resp.blob()
-            albumCoverForStore = blob;
-        }
-        if (foundFullscreenBgUrl) {
-            metadata.fullscreenbg = foundFullscreenBgUrl;
-            const resp = await fetch(foundFullscreenBgUrl)
-            const blob = await resp.blob()
-            fullscreenBgForStore = blob;
-        }
+        if (foundAlbumCoverUrl) metadata.album_cover = foundAlbumCoverUrl
+        if (foundFullscreenBgUrl) metadata.fullscreenbg = foundFullscreenBgUrl;
         foundAlbumCoverUrl = null;
         foundFullscreenBgUrl = null;
 
@@ -2151,17 +2277,13 @@ async function openEditSongModal(song) {
             fullscreenBgForStore = ''
         }
 
-        if (!albumCoverReset && changeAlbumCoverInput.files && changeAlbumCoverInput.files[0]) {
-            if (songStatuses[song.id] !== "local") {
-                metadata.album_cover = await uploadMedia(changeAlbumCoverInput.files[0], "album_cover").catch(showError)
-            }
-            albumCoverForStore = changeAlbumCoverInput.files[0]
+        if (!albumCoverReset && albumCoverFile) {
+            if (songStatuses[song.id] !== "local") metadata.album_cover = await uploadMedia(albumCoverFile, "album_cover").catch(showError)
+            albumCoverForStore = albumCoverFile
         }
-        if (!fullscreenBgReset && changeFullscreenBgInput.files && changeFullscreenBgInput.files[0]) {
-            if (songStatuses[song.id] !== "local") {
-                metadata.fullscreenbg = await uploadMedia(changeFullscreenBgInput.files[0], "fullscreenbg").catch(showError)
-            }
-            fullscreenBgForStore = changeFullscreenBgInput.files[0]
+        if (!fullscreenBgReset && fullscreenBgFile) {
+            if (songStatuses[song.id] !== "local")  metadata.fullscreenbg = await uploadMedia(fullscreenBgFile, "fullscreenbg").catch(showError)
+            fullscreenBgForStore = fullscreenBgFile
         }
 
         const store = {
@@ -2203,6 +2325,7 @@ async function openEditSongModal(song) {
                 foundAlbumCoverUrl = data.album_cover_url;
                 modalSongAlbumCover.src = foundAlbumCoverUrl;
                 changeAlbumCoverInput.value = '';
+                albumCoverFile = null;
                 albumCoverReset = false;
             }
             if (data.thumbnail_url) {
@@ -2211,6 +2334,7 @@ async function openEditSongModal(song) {
                 modalFullscreenBgVideo.classList.add('hidden');
                 modalFullscreenBgImg.classList.remove('hidden');
                 changeFullscreenBgInput.value = '';
+                fullscreenBgFile = null;
                 fullscreenBgReset = false;
             }
             editSongModalUnsaved.classList.remove('hidden');
@@ -2354,8 +2478,8 @@ playlistHeaderFindDrop.onclick = (ev) => {
     async function metadataUpdate(t) {
         const results = await Promise.all(Array.from(selectedSongIds).map(id=>{
             return new Promise(async (res,rej)=>{
-                const song = songs.find(s=>s.id===id)
-                if (!song) return res("No song found")
+                const devSong = songsOnDevice.has(id) ? await getIdFromDb(id) : songs.find(s=>s.id === id)
+                if (!devSong) return res("No song found")
                 const data = await (t === "art" ? fetchSongCoverUrls(id) : fetchSongMetadata(id)).catch((err)=>err)
                 if (typeof data !== "object") return res(data)
                 let metadata = {
@@ -2368,7 +2492,7 @@ playlistHeaderFindDrop.onclick = (ev) => {
                 const store = {};
                 if (data.album_cover_url) store["albumCoverForStore"] = await fetch(data.album_cover_url).then(r => r.blob()).catch(()=>{})
                 if (data.thumbnail_url) store["fullscreenBgForStore"] = await fetch(data.thumbnail_url).then(r => r.blob()).catch(()=>{})
-                updateTrack(song, metadata, store).catch(res).then(()=>res(false))
+                updateTrack(devSong, metadata, store).catch(res).then(()=>res(false))
             })
         }))
         const errors = results.filter(Boolean)
@@ -2510,8 +2634,6 @@ document.addEventListener('contextmenu',(ev)=>{
                 label: "Add to queue",
                 icon: "fas fa-plus",
                 action: () => {
-                    const song = songs.find(s=>s.id === id)
-                    if (!song) return;
                     manualQueue.push(song)
                 }
             })
@@ -2599,57 +2721,6 @@ document.addEventListener('contextmenu',(ev)=>{
     }
     showContextMenu(ev, base)
 })
-
-changeFullscreenBgBtn.onclick = () => changeFullscreenBgInput.click();
-changeAlbumCoverBtn.onclick = () => changeAlbumCoverInput.click();
-
-changeAlbumCoverInput.onchange = (e) =>{
-    if (e.target.files && e.target.files[0]) {
-        const reader = new FileReader();
-        reader.onload = (event) => modalSongAlbumCover.src = event.target.result;
-        reader.readAsDataURL(e.target.files[0]);
-        albumCoverReset = false
-        editSongModalUnsaved.classList.remove('hidden');
-    }
-};
-
-changeFullscreenBgInput.onchange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const isVideo = file.type.startsWith('video/');
-            if (isVideo) {
-                modalFullscreenBgVideo.src = event.target.result;
-                modalFullscreenBgVideo.classList.remove('hidden');
-                modalFullscreenBgImg.classList.add('hidden');
-            } else {
-                modalFullscreenBgImg.src = event.target.result;
-                modalFullscreenBgImg.classList.remove('hidden');
-                modalFullscreenBgVideo.classList.add('hidden');
-            }
-        };
-        reader.readAsDataURL(file);
-        fullscreenBgReset = false;
-        editSongModalUnsaved.classList.remove('hidden');
-    }
-};
-
-resetAlbumCoverBtn.onclick = () => {
-    modalSongAlbumCover.src = 'https://torok.ing/songplayer/image/genericalbumcover.jpg';
-    albumCoverReset = true;
-    changeAlbumCoverInput.value = '';
-    editSongModalUnsaved.classList.remove('hidden');
-};
-
-resetFullscreenBgBtn.onclick = () => {
-    modalFullscreenBgImg.src = randomFullscreenBg();
-    modalFullscreenBgImg.classList.remove('hidden');
-    modalFullscreenBgVideo.classList.add('hidden');
-    fullscreenBgReset = true;
-    changeFullscreenBgInput.value = '';
-    editSongModalUnsaved.classList.remove('hidden');
-};
 
 changePlaylistCoverBtn.onclick = () => changePlaylistCoverInput.click();
 

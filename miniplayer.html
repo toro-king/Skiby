@@ -256,9 +256,31 @@ function mode3() {
             display: flex;
         }
 
-        .bottom-progress {
+        .bottom-progress-holder {
             height: 1px;
-            border-top: 1px solid white;
+            position: absolute;
+            bottom: 0;
+            transition: height 0.2s ease;
+            width: 100%;
+        }
+
+        .bottom-progress {
+            height: 100%;
+            background: white;
+        }
+
+        .selectable-bottom-progress {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+            z-index: 1;
+            min-height: 12px;
+        }
+
+        .bottom-progress-holder:hover {
+            height: 6px;
         }
 
         @media (max-width: 420px) {
@@ -289,12 +311,23 @@ function mode3() {
     const playerControls = makePlayerControls()
     footer.appendChild(playerControls)
 
+    const bottomProgressHolder = createEl('div','bottom-progress-holder')
     const bottomProgress = createEl('div','bottom-progress')
-    document.body.prepend(bottomProgress)
+    const selectableProgressBar = createEl('div', 'selectable-bottom-progress')
+    bottomProgressHolder.appendChild(bottomProgress)
+    bottomProgressHolder.appendChild(selectableProgressBar)
+    document.body.appendChild(bottomProgressHolder)
     function updateProgress() {
         if (changedMode) return;
         bottomProgress.style.width = progressBar.value + '%';
         requestAnimationFrame(updateProgress)
+    }
+    selectableProgressBar.onmousedown = (ev) => {
+        const rect = selectableProgressBar.getBoundingClientRect();
+        const clickX = ev.clientX - rect.left;
+        const newValue = (clickX / rect.width) * 100;
+        progressBar.value = newValue;
+        progressBar.dispatchEvent(new Event('input'));
     }
     changedMode = false;
     requestAnimationFrame(updateProgress)
@@ -306,7 +339,7 @@ function switchMode(mode) {
     changedMode = true;
     const func = window['mode' + Number(mode)]
     document.head.querySelectorAll('.css').forEach(el => el.remove())
-    document.querySelector('.bottom-progress')?.remove()
+    document.querySelector('.bottom-progress-holder')?.remove()
     if (mode !== "0") {
         const css = createEl('style','css')
         css.textContent = `
