@@ -27,6 +27,7 @@ const $ = (id) => document.getElementById(id)
 const homePlaylistsCont = $('home-playlists-container')
 const playlistsView = $('playlistSection')
 const playlistList = $('playlistList')
+const mainContentHolder = $('main-holder')
 
 const addPlaylistBtn = $('addPlaylistBtn');
 const addPlaylistPopup = $('addPlaylistPopup')
@@ -66,7 +67,7 @@ const mediaModalUnsaved = $('actionsMediaModal')
 const mediaModalSelectBtn = $('mediaModalSelectBtn')
 const mediaModalToolbar = $('pickMediaModalToolbar')
 const mediaModalBottom = $('pickMediaModalItemList')
-const mediaFileInput = document.getElementById('mediaFileInput');
+const mediaFileInput = $('mediaFileInput');
 
 const changeAlbumCoverBtn = $('changeAlbumCoverBtn')
 const resetAlbumCoverBtn = $('resetAlbumCoverBtn')
@@ -219,10 +220,14 @@ let Prefrences = JSON.parse(localStorage.getItem('songplayerPrefrencesCache')) |
     "normalizeVolume": false,
     "miniplayer": true,
     "connectToWs": false,
-    "publicStream": true,
+    "publicStream": false,
     "canControlThisDeviceFromWs": false,
     "discordRPC": false,
-    "showListenAlongOnRPC": false
+    "showListenAlongOnRPC": false,
+    "customThemeColor": "#808080",
+    "themeMode": "dark",
+    "font": "default",
+    "playerControlPosition": "default"
 }
 Prefrences.publicStream = false;
 
@@ -866,14 +871,12 @@ function updateCurrentlyPlayingUI(song) {
     currentTimeSpan.innerText = '-:--'
     fullscreenCurrentTime.innerText = '-:--'
 
-    //audio.ontimeupdate = null
     progressBar.value = 0
     fullscreenProgressBar.value = 0
-    //audio.ontimeupdate = onTimeUpdate
 
     audio.src = audioSrc;
     audio.preservesPitch = song.speed?.preservePitch ?? true;
-    audio.playbackRate = song.speed?.playbackRate ?? 1;
+    audio.playbackRate = song.speed?.playbackRate || 1;
     songTitle.innerText = song.title;
     songArtist.innerText = song.artist;
     albumCover.src = albumCoverSrc;
@@ -1012,6 +1015,53 @@ function inject() {
                     onAction: (sel) => changeSetting("showListenAlongOnRPC",sel)
                 }
              ]
+        },
+        {
+            name: "Customization",
+            icon: "fa-paintbrush",
+            content: [
+                {
+                    label: "Custom theme color",
+                    type: "color",
+                    default: Prefrences.customThemeColor,
+                    onAction: (sel) => changeSetting("customThemeColor",sel)
+                },
+                {
+                    label: "Theme mode",
+                    type: "dropdown",
+                    options: [
+                        { label: "Dark", value: "dark" },
+                        { label: "Light", value: "light" },
+                    ],
+                    default: Prefrences.themeMode,
+                    onAction: (sel) => changeSetting("themeMode",sel)
+                },
+                {
+                    label: "Font",
+                    type: "dropdown",
+                    options: [
+                        { label: "Default", value: "Roboto" },
+                        { label: "Open Sans", value: "Open Sans" },
+                        { label: "Lato", value: "Lato" },
+                        { label: "Montserrat", value: "Montserrat" },
+                        { label: "Inter", value: "Inter" },
+                        { label: "Nunito", value: "Nunito" },
+                        { label: "Source Sans 3", value: "Source Sans 3" }
+                    ],
+                    default: Prefrences.font,
+                    onAction: (sel) => changeSetting("font",sel)
+                },
+                {
+                    label: "Player control position",
+                    type: "dropdown",
+                    options: [
+                        { label: "Default", value: "default" },
+                        { label: "Classic", value: "classic" }
+                    ],
+                    default: Prefrences.playerControlPosition,
+                    onAction: (sel) => changeSetting("playerControlPosition",sel)
+                }
+             ]
         }
     ])
 }
@@ -1040,7 +1090,15 @@ createLinkBtn.onclick = () => {
 }
 
 function changeSetting(val,mode){
+    if (!mode) mode = Prefrences[val]
     Prefrences[val] = mode
+    if (val === "customThemeColor" || val === "themeMode" || val === "font") {
+        changeThemeColor(Prefrences.customThemeColor, Prefrences.font, Prefrences.themeMode === "dark")
+    }
+    if (val === "playerControlPosition") {
+        const location = mode === "default" ? document.body : mainContentHolder
+        location.appendChild(footer)
+    }
     if (val === "connectToWs") {
         if (mode) connectWs()
         else ws.ws?.close()
@@ -1188,8 +1246,8 @@ uploadArea.onclick = () => {
         selectPlaylist(currentlyViewingPlaylist.id)
     }
 }
-songList.ondragover = (ev) => ev.preventDefault();
-songList.ondrop = (ev) => {
+
+function dropEvent(ev) {
     ev.preventDefault();
     if (ev.dataTransfer.files.length === 0) return;
     const ids = addSongsFromFiles(ev.dataTransfer.files)
@@ -1198,6 +1256,10 @@ songList.ondrop = (ev) => {
     }
     else selectPlaylist(currentlyViewingPlaylist.id)
 }
+uploadArea.ondragover = (ev) => ev.preventDefault();
+uploadArea.ondrop = dropEvent
+songList.ondragover = (ev) => ev.preventDefault();
+songList.ondrop = dropEvent
 
 confirmAddPlaylistBtn.onclick = () => {
     const name = newPlaylistNameInput.value.trim();
@@ -1294,16 +1356,14 @@ function parseTimeToSeconds(timeStr) {
 
 async function requestPersistentStorage() {
     const isPersisted = await navigator.storage.persisted();
-    if (!isPersisted) {
-        const result = await navigator.storage.persist();
-        console.log(`Storage persistence request was ${result ? 'granted' : 'denied'}.`);
-    }
+    if (!isPersisted) await navigator.storage.persist();
 }
 
 function addSongsFromFiles(files) {
     const ids = []
     requestPersistentStorage();
     for (const file of files) {
+        if (!file.type.startsWith('audio/')) continue;
         parseBlob(new Blob([file], {type:file.type})).then(metadata => {
             const newSong = {
                 id: crypto.randomUUID(),
@@ -1699,7 +1759,7 @@ async function closeMiniplayer() {
         progressContainer.appendChild(totalTimeSpan)
         currentMiniplayer.close();
         currentMiniplayer = null;
-        document.body.appendChild(footer);
+        changeSetting("playerControlPosition", Prefrences.playerControlPosition);
         setActionHandlers();
     }
 }
@@ -1986,7 +2046,6 @@ async function openMediaModal(type) {
                 const img = new Image()
                 const span = createEl('span')
                 span.innerText = itemData.original_filename || itemData.filename
-                console.log(itemData)
                 img.loading = "lazy"
                 img.src = itemData.filename
                 item.dataset.filename = itemData.filename.split('/').at(-1)
@@ -2534,8 +2593,10 @@ playlistHeaderRemoveDrop.onclick = (ev) => {
                 selectedSongIds.clear()
                 playlistHeaderItemCount.innerText = '0 items selected'
             }
-        },
-        {
+        }
+    ]
+    if (currentlyViewingPlaylist?.id !== "all songs")
+        items.push({
             label: "Remove from playlist",
             icon: "fas fa-minus",
             danger: true,
@@ -2544,8 +2605,7 @@ playlistHeaderRemoveDrop.onclick = (ev) => {
                 selectedSongIds.clear()
                 playlistHeaderItemCount.innerText = '0 items selected'
             }
-        }
-    ]
+        })
     showContextMenu(ev, items, ev)
 }
 
@@ -2771,7 +2831,13 @@ updateControlBtns()
 
 setTimeout(()=>{
     if (new URLSearchParams(window.location.search).get('nosw')) return;
-    navigator.serviceWorker.register('sw.js')
+    if (!('serviceWorker' in navigator)) return;
+    const isSkiby = /(^|\.)skiby\.app$/.test(location.hostname);
+    navigator.serviceWorker.register(isSkiby ? '/sw.js' : '/songplayer/sw.js', {
+        scope: isSkiby ? '/' : '/songplayer/',
+        updateViaCache: 'none'
+    })
+    .then(registration => registration.update())
     .catch(error => {
         console.log('Service Worker registration failed:', error);
     });
@@ -2783,10 +2849,15 @@ window.addEventListener('message',(ev)=>{
     }
 })
 
-navigator.serviceWorker.onmessage = (ev) => {
-    if (ev.data?.type === "PLAYER_ASSETS_UPDATED") {
-        customAlert("Updates installed, refresh the page to see changes", "info")
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.onmessage = (ev) => {
+        if (ev.data?.type === "PLAYER_ASSETS_UPDATED") {
+            customAlert("Updates installed, refresh the page to see changes", "info")
+        }
     }
+    const reportPlayerReady = () => navigator.serviceWorker.controller?.postMessage({ type: 'PLAYER_CLIENT_READY' });
+    navigator.serviceWorker.addEventListener('controllerchange', reportPlayerReady);
+    navigator.serviceWorker.ready.then(reportPlayerReady);
 }
 
 // WebSocket
@@ -3072,65 +3143,185 @@ devicesBackBtn.onclick = () => refreshDeviceList()
 
 if (Prefrences.connectToWs || document.location.search.includes('li')) 
     connectWs();
-;
-// Optional local Discord handoff. Existing public artwork and listen-along links only.
-(() => {
-    if (window.skibyDiscordArtworkInstalled) return;
-    window.skibyDiscordArtworkInstalled = true;
-    let latest = null, busy = false, queued = false, wasEnabled = false;
-    const originalSend = sendWsMessage;
-    sendWsMessage = function (payload) {
-        if (payload?.type === 'metadata_update') latest = payload.metadata;
-        return originalSend.apply(this, arguments);
-    };
-    if (location.hash === '#discord-artwork') {
-        Prefrences.discordRPC = true;
-        localStorage.setItem('songplayerPrefrencesCache', JSON.stringify(Prefrences));
-        history.replaceState(null, '', location.pathname + location.search);
-    }
-    async function sendArtwork() {
-        if (busy) { queued = true; return; }
-        const enabled = Prefrences.discordRPC === true;
-        if (!enabled && !wasEnabled) return;
-        wasEnabled = enabled;
-        const song = currentlyPlayingSong;
-        const connected = ws.ws?.readyState === WebSocket.OPEN;
-        const metadata = ws.connectedUser ? song : latest;
-        const same = metadata && song && metadata.title === song.title && metadata.artist === song.artist;
-        const url = enabled && connected && same ? metadata.album_cover : null;
-        const publicUrl = typeof url === 'string' && /^https:\/\/(?:torok\.ing|(?:www\.)?skiby\.app)\/songplayer\/public\/[a-f0-9-]{36}\.(?:png|jpe?g|webp|gif|avif)$/i.test(url) ? url : null;
-        const publicStream = Prefrences.publicStream === true;
-        const showListenAlongOnRPC = Prefrences.showListenAlongOnRPC === true;
-        // Same URL as createLinkBtn, without enabling public streaming or touching the clipboard.
-        // A subscribed listener must not advertise their own device as the host.
-        const listenAlongUrl = enabled && connected && publicStream && showListenAlongOnRPC &&
-            !ws.connectedUser && typeof userid !== 'undefined' && userid != null && deviceId ?
-            `${location.origin}${location.pathname}?li=${userid}:${deviceId}` : null;
-        busy = true;
-        fetch('http://127.0.0.1:29741/artwork', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                credentials: 'omit', signal: AbortSignal.timeout(2500),
-                body: JSON.stringify(enabled && song ? {
-                    enabled: true, title: song.title || '', artist: song.artist || '',
-                    album: song.album || '', url: publicUrl,
-                    publicStream, showListenAlongOnRPC, connected, listenAlongUrl
-                } : { enabled: false })
-            }).catch(()=>{}).finally(() => {
-            busy = false;
-            if (queued) { queued = false; queueMicrotask(sendArtwork); }
-        })
-    }
-    setInterval(sendArtwork, 5000);
-    // React to sharing/settings/socket changes even when the song and artwork stay unchanged.
-    let previousSharingState = '';
-    setInterval(() => {
-        const sharingState = JSON.stringify([Prefrences.discordRPC, Prefrences.publicStream,
-            Prefrences.showListenAlongOnRPC, ws.ws?.readyState, Boolean(ws.connectedUser),
-            typeof userid === 'undefined' ? null : userid, typeof deviceId === 'undefined' ? null : deviceId]);
-        if (sharingState !== previousSharingState) {
-            previousSharingState = sharingState;
-            void sendArtwork();
-        }
-    }, 1000);
-})();
 
+// Let the vibecoded shit commence:
+
+// Optional local Discord handoff. Existing public artwork and listen-along links only.
+let latest = null, busy = false, queued = false, wasEnabled = false;
+const originalSend = sendWsMessage;
+sendWsMessage = function (payload) {
+    if (payload?.type === 'metadata_update') latest = payload.metadata;
+    return originalSend.apply(this, arguments);
+};
+if (location.hash === '#discord-artwork') {
+    Prefrences.discordRPC = true;
+    localStorage.setItem('songplayerPrefrencesCache', JSON.stringify(Prefrences));
+    history.replaceState(null, '', location.pathname + location.search);
+}
+async function sendArtwork() {
+    if (busy) { queued = true; return; }
+    const enabled = Prefrences.discordRPC === true;
+    if (!enabled && !wasEnabled) return;
+    wasEnabled = enabled;
+    const song = currentlyPlayingSong;
+    const connected = ws.ws?.readyState === WebSocket.OPEN;
+    const metadata = ws.connectedUser ? song : latest;
+    const same = metadata && song && metadata.title === song.title && metadata.artist === song.artist;
+    const url = enabled && connected && same ? metadata.album_cover : null;
+    const publicUrl = typeof url === 'string' && /^https:\/\/(?:torok\.ing|(?:www\.)?skiby\.app)\/songplayer\/public\/[a-f0-9-]{36}\.(?:png|jpe?g|webp|gif|avif)$/i.test(url) ? url : null;
+    const publicStream = Prefrences.publicStream === true;
+    const showListenAlongOnRPC = Prefrences.showListenAlongOnRPC === true;
+    // Same URL as createLinkBtn, without enabling public streaming or touching the clipboard.
+    // A subscribed listener must not advertise their own device as the host.
+    const listenAlongUrl = enabled && connected && publicStream && showListenAlongOnRPC &&
+        !ws.connectedUser && typeof userid !== 'undefined' && userid != null && deviceId ?
+        `${location.origin}${location.pathname}?li=${userid}:${deviceId}` : null;
+    busy = true;
+    fetch('http://127.0.0.1:29741/artwork', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            credentials: 'omit', signal: AbortSignal.timeout(2500),
+            body: JSON.stringify(enabled && song ? {
+                enabled: true, title: song.title || '', artist: song.artist || '',
+                album: song.album || '', url: publicUrl,
+                publicStream, showListenAlongOnRPC, connected, listenAlongUrl
+            } : { enabled: false })
+        }).catch(()=>{}).finally(() => {
+        busy = false;
+        if (queued) { queued = false; queueMicrotask(sendArtwork); }
+    })
+}
+setInterval(sendArtwork, 5000);
+// React to sharing/settings/socket changes even when the song and artwork stay unchanged.
+let previousSharingState = '';
+setInterval(() => {
+    const sharingState = JSON.stringify([Prefrences.discordRPC, Prefrences.publicStream,
+        Prefrences.showListenAlongOnRPC, ws.ws?.readyState, Boolean(ws.connectedUser),
+        typeof userid === 'undefined' ? null : userid, typeof deviceId === 'undefined' ? null : deviceId]);
+    if (sharingState !== previousSharingState) {
+        previousSharingState = sharingState;
+        void sendArtwork();
+    }
+}, 1000);
+
+// Fixed appearance for Skiby. Include once, instead of the interactive draft.
+// Edit these three constants in the source to choose a different preset.
+// The color supplies hue/saturation; theme determines surface brightness.
+const originalThemeDeclarations = new WeakMap();
+function changeThemeColor(color, font, theme) {
+    const properties = new Set([
+        'color', 'background', 'background-color', 'background-image',
+        'border', 'border-color', 'border-top', 'border-right', 'border-bottom', 'border-left',
+        'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+        'outline', 'outline-color', 'box-shadow', 'text-shadow', 'text-decoration-color',
+        'accent-color', 'caret-color', 'fill', 'stroke'
+    ]);
+    // Covers color formats currently used in skibidistylenew.css.
+    // Consume complete URLs first so color-like URL fragments are never rewritten.
+    const tokens = /url\((?:[^)"']|"[^"]*"|'[^']*')*\)|#[\da-f]{3,8}\b|rgba?\([^)]*\)|\b(?:white|black|transparent|grey|gray|darkgrey|darkgray)\b/gi;
+    const parser = document.createElement('canvas').getContext('2d');
+
+    function hsl(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const d = max - min, l = (max + min) / 2;
+        if (!d) return [0, 0, l];
+        const s = d / (l > 0.5 ? 2 - max - min : max + min);
+        const h = max === r ? (g - b) / d + (g < b ? 6 : 0)
+            : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+        return [h * 60, s, l];
+    }
+
+    function rgb(h, s, l) {
+        const a = s * Math.min(l, 1 - l);
+        return [0, 8, 4].map(offset => {
+            const k = (offset + h / 30) % 12;
+            return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+        });
+    }
+
+    function parse(value) {
+        parser.fillStyle = value;
+        const c = parser.fillStyle;
+        if (c.startsWith('#')) {
+            return [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)).concat(1);
+        }
+        const numbers = c.match(/[\d.]+/g)?.map(Number);
+        return numbers?.length === 3 ? [...numbers, 1] : numbers;
+    }
+
+    function mapColor(value, target, background, property) {
+        if (/^url\(/i.test(value)) return value;
+        const color = parse(value);
+        if (!color || color[3] < 0.01) return value;
+        const [originalHue, originalS, originalL] = hsl(...color);
+        const [targetHue, targetS, targetL] = target;
+        // Skiby's source CSS is dark: inversion produces the LIGHT variant.
+        let l = !theme ? 1 - originalL : originalL;
+        let h = targetHue, s = originalS;
+        if (targetS < 0.01) {
+            if (theme) return value;
+            h = originalHue;
+            if (property === 'color' && originalS > 0.08) {
+                l = Math.min(l, 0.30);
+            }
+        } else if (originalS < 0.08) {
+            const strength = Math.min(targetS / 0.8, 1);
+            if (l > 0.95) { s = 0.50 * strength; l = 0.90; }
+            else if (l > 0.85) { s = 0.40 * strength; l -= 0.05; }
+            else if (l > 0.70) s = 0.35 * strength;
+            else if (l < 0.02) { s = 0.50 * strength; l = 0.10; }
+            else if (l < 0.15) { s = 0.40 * strength; l = Math.max(l, 0.08); }
+            else s = (l < 0.40 ? 0.30 : 0.25) * strength;
+        } else {
+            s = 0.6 * originalS + 0.4 * targetS;
+            if (background && l < 0.15) {
+                l = Math.max(0.8 * targetL, 0.4);
+                s = Math.max(s, 0.7 * targetS);
+            }
+        }
+        return `rgba(${rgb(h, s, l).join(', ')}, ${color[3]})`;
+    }
+
+
+    function rewrite(rules, target) {
+        for (const rule of rules) {
+            if (rule.type === CSSRule.KEYFRAMES_RULE) continue;
+            if (rule.style && rule.selectorText) {
+                const style = rule.style;
+                if (!originalThemeDeclarations.has(style)) {
+                    originalThemeDeclarations.set(
+                        style,
+                        Array.from(style, property => [
+                            property,
+                            style.getPropertyValue(property),
+                            style.getPropertyPriority(property)
+                        ])
+                    );
+                }
+                const declarations = originalThemeDeclarations.get(style);
+                for (const [property, value, priority] of declarations) {
+                    if (property === 'font-family') {
+                        style.setProperty(property, `'${font}', sans-serif` ?? value, priority);
+                    } else if (properties.has(property)) {
+                        const background = property === 'background' || property === 'background-image';
+                        const mapped = value.replace(tokens, color => mapColor(color, target, background, property));
+                        style.setProperty(property, mapped, priority);
+                    }
+                }
+            }
+            if (rule.cssRules) rewrite(rule.cssRules, target);
+        }
+    }
+
+    const link = Array.from(document.querySelectorAll('link[rel~="stylesheet"]')).find(node => node.href.endsWith('skibidistylenew.css')).sheet.cssRules;
+    const chosen = parse(color);
+    document.body.dataset.theme = theme ? 'dark' : 'light';
+    const [hue, saturation] = hsl(...chosen);
+    const target = saturation
+        ? hsl(...rgb(hue, saturation, !theme ? 0.85 : 0.15))
+        : [0, 0, 0.5];
+    rewrite(link, target);
+};
+
+changeSetting("playerControlPosition")
+changeSetting("customThemeColor")

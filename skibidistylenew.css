@@ -446,19 +446,6 @@ padding-bottom:150px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
-/* Large Album Art Toggle Icon */
-.album-art-toggle {
-  position: absolute;
-  bottom: 20px;
-  right: 20px;
-  cursor: pointer;
-  color: #FFF;
-}
-
-.album-art-toggle:hover {
-  color: #1DB954;
-}
-
 /* Large Album Art Display */
 .large-album-art {
     position: relative;
@@ -506,67 +493,6 @@ padding-bottom:150px;
   justify-content: space-between; /* For the three dots */
   cursor: pointer;
   transition: background-color 0.3s, transform 0.3s, box-shadow 0.3s;
-}
-
-/* Song Item Styling */
-.playlist .song-details {
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-.playlist .song-details img {
-  width: 50px;
-  height: 50px;
-  object-fit: cover;
-  border-radius: 5px;
-  margin-right: 15px;
-}
-
-.playlist .song-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.playlist .song-info .title-artist {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.playlist .song-info .title-artist h4 {
-  font-size: 16px;
-  margin-bottom: 5px;
-  color: #FFF; /* Default color */
-}
-
-.playlist .song-info .title-artist h4.playing {
-  color: #1DB954; /* Green color for currently playing song */
-}
-
-.playlist .song-info p {
-  font-size: 14px;
-  color: #AAA;
-}
-
-.playlist .song-info .additional-info {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #BBB;
-  margin-top: 5px;
-}
-
-.playlist .three-dots {
-  cursor: pointer;
-  font-size: 18px;
-  color: #BBB;
-  transition: color 0.3s;
-}
-
-.playlist .three-dots:hover {
-  color: #FFF;
 }
 
 /* Footer Styling */
@@ -626,27 +552,6 @@ padding-bottom:150px;
   display: block;
 }
 
-.auth-button {
-  margin-top: 20px;
-  padding: 10px;
-  background-color: #FF4C4C; /* Red for logout */
-  border: none;
-  border-radius: 5px;
-  color: #FFF;
-  font-size: 16px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-  width: 100%;
-}
-
-.auth-button.login {
-  background-color: #1DB954; /* Green for login */
-}
-
-.auth-button:hover {
-  opacity: 0.8;
-}
-
 #songInfo, .songInfo {
   display: flex;
   flex-direction: column;
@@ -671,17 +576,6 @@ text-overflow: ellipsis;
   color: #AAA;
 }
 
-#playlistEditModal .modal-content {
-    max-width: 550px;
-}
-
-.playlist-edit-body {
-    display: flex;
-    margin-top:20px;
-    gap: 20px;
-    align-items: flex-start;
-}
-
 .playlist-edit-art-container {
     position: relative;
     width: 200px;
@@ -697,36 +591,6 @@ text-overflow: ellipsis;
     opacity: 0; /* Hidden by default */
     transition: opacity 0.3s ease;
     pointer-events: none; /* Allows hover on the container itself */
-}
-
-#editPlaylistCover {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: 8px;
-    background-color: #333; /* Placeholder color */
-}
-
-.art-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.6);
-    color: #fff;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    border-radius: 8px;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    pointer-events: none; /* Let clicks pass through to the container */
-}
-
-.playlist-edit-art-container:hover .art-overlay {
-    opacity: 1;
 }
 
 .playlist-edit-art-container:hover .art-actions {
@@ -753,119 +617,11 @@ text-overflow: ellipsis;
     background-color: rgba(0, 0, 0, 0.9);
 }
 
-.art-overlay i {
-    font-size: 24px;
-    margin-bottom: 8px;
-}
-
-.art-overlay span {
-    font-size: 14px;
-    font-weight: bold;
-}
-
 .playlist-edit-details {
     display: flex;
     flex-direction: column;
     flex-grow: 1;
     gap: 15px;
-}
-
-#playlistEditModal #playlistNameInput,
-#playlistEditModal #playlistDescriptionInput {
-    background: #3e3e3e;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 12px;
-    color: #FFF;
-    width: 100%;
-    box-sizing: border-box;
-}
-
-#playlistEditModal #playlistNameInput {
-    font-size: 16px;
-    font-weight: bold;
-}
-
-#playlistEditModal #playlistDescriptionInput {
-    resize: vertical;
-    min-height: 80px;
-    font-family:sans-serif;
-    height:120px;
-}
-
-#playlistEditModal #savePlaylistChangesBtn {
-    align-self: flex-end; /* Align button to the right */
-    padding: 10px 25px;
-    width: auto; /* Override default 100% width */
-}
-
-/* Remove old form-row styling from this modal */
-#playlistEditModal .form-row {
-    display: none; 
-}
-
-#playlistEditForm {
-  text-align: center;
-}
-
-#savePlaylistChangesBtn {
-  margin-top: 20px;
-  padding: 10px;
-  background-color: #1DB954;
-  border: none;
-  border-radius: 5px;
-  color: #FFF;
-  font-size: 16px;
-  cursor: pointer;
-  width: 100%;
-  text-align: center;
-}
-
-#savePlaylistChangesBtn:hover {
-  background-color: #17a74a;
-}
-
-.close-playlist-edit-button {
-  position: absolute;
-  top: 10px;
-  right: 15px;
-  font-size: 24px;
-  cursor: pointer;
-  color: #FFF;
-}
-
-.close-playlist-edit-button:hover {
-  color: #1DB954;
-}
-
-.controls button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  margin: 0 10px;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-
-.controls button img {
-  width: 15px;
-  height: 15px;
-  filter: invert(100%); /* Make SVG icons white */
-  transition: filter 0.3s;
-}
-
-.controls button:hover img {
-  filter: invert(59%) sepia(29%) saturate(1078%) hue-rotate(89deg) brightness(95%) contrast(94%); /* Spotify Green */
-}
-
-/* Active Shuffle/Repeat Buttons */
-.controls button.active img {
-  filter: invert(59%) sepia(29%) saturate(1078%) hue-rotate(89deg) brightness(95%) contrast(94%); /* Spotify Green */
 }
 
 .control-item {
@@ -933,11 +689,6 @@ text-overflow: ellipsis;
 
 .control-item.active .indicator {
   display: block;
-}
-
-.volume-control label {
-  margin-right: 10px;
-  font-size: 14px;
 }
 
 #volumeSlider {
@@ -1087,21 +838,6 @@ text-overflow: ellipsis;
   flex: 1;
 }
 
-/* Ensure the GIF is placed at the end */
-.homeSection {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.homeSection .home-playlist-heading,
-.homeSection #home-playlists-container,
-.homeSection .homepage-gif {
-  width: 100%;
-  max-width: 1200px; /* Adjust based on desired maximum width */
-  padding: 0 20px;
-}
-
 .track-title.playing {
   color: #1DB954; /* Spotify Green */
 }
@@ -1186,53 +922,6 @@ text-overflow: ellipsis;
   z-index: 1; /* Ensure the overlay is above the background but below the content */
 }
 
-/* Settings Button Styling */
-.settings-button {
-  background: none;
-  border: none;
-  color: #FFF;
-  font-size: 20px;
-  cursor: pointer;
-  position: absolute;
-  right: 10px;
-  transform: translateX(-50%);
-  padding: 10px;
-  border-radius: 50%;
-  transition: background-color 0.3s;
-}
-
-.settings-button:hover {
-  background-color: #333;
-}
-
-/* Settings Panel Styling */
-.settings-panel {
-  position: absolute;
-  top: 60px; /* Position below the header */
-  right: 20px; /* Align to the right */
-  background-color: #1F1F1F;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-  width: calc(100% - 30px);
-  max-width: 600px;
-  height:420px;
-  z-index: 200; /* Higher z-index to appear above other elements */
-  display:flex;
-  flex-direction:column;
-  overflow:hidden;
-}
-
-.settings-logo {
-  display: flex;
-  align-items: center;
-}
-
-.settings-logo .logo {
-  width: 30px;
-  height: 30px;
-  margin-right: 10px;
-}
-
 .nav-left, .nav-center, .nav-right {
   display: flex;
   align-items: center;
@@ -1267,44 +956,8 @@ text-overflow: ellipsis;
   display: flex;
 }
 
-.basicbutton {
-  background-color: #333;
-  border: none;
-  color: #FFF;
-  padding: 8px 20px; /* Increased padding for wider buttons */
-  margin: 0 5px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 14px; /* Adjust font size as needed */
-}
-
-.basicbutton.active,
-.basicbutton:hover {
-  background-color: #555;
-}
-
-.nav-right .settings-button {
-  background: none;
-  border: none;
-  color: #FFF;
-  font-size: 20px;
-  cursor: pointer;
-  margin-left: 15px; /* Add some spacing if needed */
-}
-
 .nav-right {
   gap: 10px;
-}
-
-.settings-text span:first-child {
-  font-size: 16px;
-  color: #FFF;
-}
-
-.settings-text .version {
-  font-size: 12px;
-  color: #AAA;
-  display: block;
 }
 
 @media (max-width: 1023px) {
@@ -1344,9 +997,6 @@ text-overflow: ellipsis;
 }
 
 @media (max-width: 800px) {
-  .playlist-edit-body {
-    flex-direction: column;
-  }
 
   .song-art-previews {
     flex-direction: row;
@@ -1388,6 +1038,7 @@ text-overflow: ellipsis;
   /* Main Content Adjustment */
   .main-content {
       margin-left: 0; /* Allow sidebar to overlay without pushing content */
+      flex-grow: 1;
   }
 
   /* Footer Adjustment *//*
@@ -1446,7 +1097,7 @@ text-overflow: ellipsis;
 }
 
 /* Example Spotify-like Styles for li */
-#onlinePlaylist li, #home-playlists-container .playlist-card li, #localPlaylist li {
+#onlinePlaylist li, #home-playlists-container .playlist-card li {
   display: grid;
   grid-template-columns: 40px 3fr 2fr 150px 50px 30px; /* # | Title/Artist | Album | Date added | Length | Threedots */
   align-items: center;
@@ -1534,15 +1185,6 @@ text-overflow: ellipsis;
 
 #onlinePlaylist li:first-child {
   border-top: none;
-}
-
-.modal-album-cover {
-  width: 175px; /* or any size you like */
-  height: 175px;
-  object-fit: cover;
-  border-radius: 8px;
-  /* If you want a border: */
-  /* border: 2px solid #333; */
 }
 
 
@@ -1682,12 +1324,6 @@ text-overflow: ellipsis;
   transition: background-color 0.3s, border-color 0.3s, color 0.3s;
 }
 
-.upload-area.dragover {
-  border-color: #1DB954;
-  background-color: #333;
-  color: #FFF;
-}
-
 .upload-instructions {
   margin-bottom: 10px;
 }
@@ -1730,23 +1366,6 @@ text-overflow: ellipsis;
   background-color: #444;
   border-radius: 4px;
   color: #FFF;
-}
-
-/* Style the Save button */
-#saveSongInfoBtn {
-  align-self: flex-start; /* Aligns the button to the */
-  padding: 10px 20px;
-  background-color: #1DB954;
-  color: #FFF;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 16px;
-  transition: background-color 0.3s;
-}
-
-#saveSongInfoBtn:hover {
-  background-color: #17a74a;
 }
 
 .playlist-header-container {
@@ -1933,11 +1552,6 @@ li.disabled-offline {
   width: 14px; height: 14px; margin-right: 5px; vertical-align: middle;
 }
 
-#songModalCloseBtn {
-  position: absolute;
-  right: 20px;
-}
-
 .custom-context-menu {
   position: absolute;
   background-color: #2C2C2C;
@@ -1984,11 +1598,6 @@ li.disabled-offline {
 }
 
 #addPlaylistPopup {
-    left: auto;
-    top: auto;
-}
-
-#devicesPopup {
     left: auto;
     top: auto;
 }
@@ -2109,20 +1718,6 @@ li.disabled-offline {
 			gap:8px;
 		}
 
-		.cancel-btn {
-			background-color: inherit;
-			border: 1px solid #5865f2
-		}
-
-    		.modal-sidebar {
-			width: 180px;
-			background-color: #1f1f1f;
-			border-right: 1px solid #3a3a3a;
-			padding: 8px 0;
-			display: flex;
-			flex-direction: column;
-		}
-
     		.tab-button {
 			background: none;
 			border: none;
@@ -2175,10 +1770,6 @@ li.disabled-offline {
 
     .modal-unsaved-changes button {
 	padding: 4px 6px;
-}
-
-#permissionConfigModal:has(.modal-unsaved-changes:not(.hidden)) .close-button {
-    display: none;
 }
 
 /* =========================
@@ -2536,4 +2127,14 @@ li.disabled-offline {
 .findBtn.disabled {
   opacity: 0.5;
   pointer-events: none;
+}
+
+body[data-theme="light"] img[src*="/songplayer/icons/"][src*=".svg"] {
+    filter: brightness(0);
+}
+
+#main-holder {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
