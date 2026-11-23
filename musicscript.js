@@ -133,6 +133,7 @@ const devicesPopup = $('devicePopup')
 const volumeBtn = $('volumeBtn')
 const volumeSlider = $('volumeSlider');
 const fullscreenBtn = $('fullscreenToggleBtn')
+const threeDotsButtonFooter = $('threeDotsButtonFooter')
 const albumCover = $('albumCover');
 const songTitle = $('songTitle');
 const songArtist = $('songArtist');
@@ -140,6 +141,11 @@ const playPauseBtnImg = $('playPauseBtnImg')
 const totalTimeSpan = $('totalTime')
 const progressBar = $('progressBar')
 const currentTimeSpan = $('currentTime')
+
+const playbackSpeedPopup = $('playbackSpeedPopup')
+const playbackSpeedPopupSpeedText = $('playbackSpeedPopupSpeedText')
+const playbackSpeedPopupSpeedSlider = $('playbackSpeedPopupSpeed')
+const playbackSpeedPopupPreservePitch = $('playbackSpeedPopupPreservePitch')
 
 const hamburgerBtn = $('hamburger-button-mmmmmyummy')
 const homeBtn = $('homeMode')
@@ -204,6 +210,12 @@ const popups = {
         button: headphoneBtn,
         placement: 'top',
         percentX: 90
+    },
+    playbackSpeed: {
+        popup: playbackSpeedPopup,
+        button: threeDotsButtonFooter,
+        placement: 'top',
+        percentX: 90
     }
 }
 
@@ -226,7 +238,7 @@ let Prefrences = JSON.parse(localStorage.getItem('songplayerPrefrencesCache')) |
     "showListenAlongOnRPC": false,
     "customThemeColor": "#808080",
     "themeMode": "dark",
-    "font": "default",
+    "font": "Roboto",
     "playerControlPosition": "default"
 }
 Prefrences.publicStream = false;
@@ -262,6 +274,7 @@ let selectedSongIds = new Set();
 
 let onlineActionsQueue = JSON.parse(localStorage.getItem('onlineActionsQueue')) || [];
 let failedOnlineActionsQueue = [];
+let workingThroughQueue = false;
 
 let albumCoverReset = false;
 let fullscreenBgReset = false;
@@ -279,6 +292,9 @@ let nextMsgId = 1;
 let deviceId = null;
 let firstConnectToDevice = false;
 let initialTimePositionReq = false;
+
+let progressBarAnimFrame;
+let pendingSongUpdateTimeout = {};
 
 inject()
 if (playlists) renderPlaylists();
@@ -565,6 +581,7 @@ async function selectPlaylist(id) {
         const trackLength = createEl('div','track-length')
         const trackMenu = createEl('div')
         const threeDotsBtn = createEl('button','three-dots-button')
+        const threeDotsBtnImg = createEl('img')
 
         if (songStatuses[song.id] === "local") statusIcon.src = 'https://torok.ing/songplayer/icons/file.svg'
         else if (songStatuses[song.id] === "downloaded") statusIcon.src = 'https://torok.ing/songplayer/icons/local.svg'
@@ -588,7 +605,7 @@ async function selectPlaylist(id) {
         trackAlbum.innerText = song.album;
         trackDateAdded.innerText = (new Date(song.date_added.replace(" ", "T").split(".")[0])).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) || "";
         trackLength.innerText = song.length
-        threeDotsBtn.innerText = '⋮';
+        threeDotsBtnImg.src = 'https://torok.ing/songplayer/icons/threedots.svg'
         threeDotsBtn.onclick = (ev) => {
             const event = new MouseEvent("contextmenu", {
                 bubbles: true,
@@ -610,6 +627,7 @@ async function selectPlaylist(id) {
             startPlayback(song.id, playlist)
         }
 
+        threeDotsBtn.appendChild(threeDotsBtnImg)
         statusIconContainer.appendChild(statusIcon)
         artistContainer.appendChild(statusIconContainer)
         artistContainer.appendChild(artistElem)
@@ -651,10 +669,10 @@ function switchMode(mode,id) {
     if (id) selectPlaylist(id)
 }
 
-function getLogicalTrackLength(song) {
+function getLogicalTrackLength(song, trackSpeedOverride) {
     const trackSpeed = song.speed?.playbackRate || 1
     const dictionaryLength = parseTimeToSeconds(song["length"]);
-    return dictionaryLength / trackSpeed
+    return dictionaryLength / (trackSpeedOverride || trackSpeed)
 }
 
 async function startPlayback(id,playlist) {
@@ -754,7 +772,7 @@ async function updateProgress(once) {
 
     if (audio.paused) return;
     if (once === true) return;
-    requestAnimationFrame(updateProgress);
+    currentProgressAnimFrame = requestAnimationFrame(updateProgress);
 }
 
 function tweenSlider(to) {
@@ -861,22 +879,24 @@ function updateCurrentlyPlayingUI(song) {
     let audioSrc = getAudioForTrack(song)
     let albumCoverSrc = getAlbumCoverForTrack(song)
 
+    const songPlaybackSpeed = song.speed?.playbackRate || 1
+    const songPreservesPitch = song.speed?.preservePitch ?? true
+
     currentlyPlayingSong = song;
-    currentTrackEffectiveTime = getLogicalTrackLength(song)
     updateMetadataWs(song.id);
     highlightCurrentPlaying()
 
-    totalTimeSpan.innerText = formatTime(currentTrackEffectiveTime) || '0:00'
-    fullscreenTotalTime.innerText = formatTime(currentTrackEffectiveTime) || '0:00'
+    cancelAnimationFrame(progressBarAnimFrame)
     currentTimeSpan.innerText = '-:--'
     fullscreenCurrentTime.innerText = '-:--'
-
     progressBar.value = 0
     fullscreenProgressBar.value = 0
-
+    playbackSpeedPopupSpeedSlider.value = songPlaybackSpeed
+    playbackSpeedPopupPreservePitch.checked = songPreservesPitch
+    
     audio.src = audioSrc;
-    audio.preservesPitch = song.speed?.preservePitch ?? true;
-    audio.playbackRate = song.speed?.playbackRate || 1;
+    playbackSpeedPopupPreservePitch.dispatchEvent(new Event("input"))
+    playbackSpeedPopupSpeedSlider.dispatchEvent(new Event("input"))
     songTitle.innerText = song.title;
     songArtist.innerText = song.artist;
     albumCover.src = albumCoverSrc;
@@ -1233,24 +1253,81 @@ fullscreenBtn.onclick = () => {
     setFullscreenBg(currentlyPlayingSong)
     fullscreenPlayer.classList.remove('hidden')
 }
+threeDotsButtonFooter.onclick = (ev) => {
+    if (!playbackSpeedPopup.classList.contains('hidden')) {
+        playbackSpeedPopup.classList.add('hidden')
+        return;
+    }
+    const items = []
+    if (currentlyPlayingSong)
+        items.push({
+            label: "Playback Speed",
+            icon: "fas fa-gauge",
+            action: () => {
+                playbackSpeedPopup.classList.remove('hidden')
+                positionPopupOverElement("playbackSpeed")
+            }
+        })
+    items.push({
+            label: "Open Queue",
+            icon: "fas fa-music",
+            action: () => {
+                
+            }
+        })
+    showContextMenu(ev, items, ev)
+}
 }
 setActionHandlers()
+
+function updateSpeedValueAfterDelay(songid, k,v) {
+    if (pendingSongUpdateTimeout[k]) {
+        clearTimeout(pendingSongUpdateTimeout[k]);
+        pendingSongUpdateTimeout[k] = null;
+    }
+    pendingSongUpdateTimeout[k] = setTimeout(async ()=>{
+        if (currentlyPlayingSong.id === songid && currentlyPlayingSong.speed?.[k] === v) {
+            pendingSongUpdateTimeout[k] = null;
+            return;
+        }
+        const song = songsOnDevice.has(songid) ? await getIdFromDb(songid) : songs.find(s=>s.id===songid)
+        if (!song.speed) song.speed = {playbackRate: 1, preservePitch: true}
+        song.speed[k] = v
+        if (currentlyPlayingSong.id===songid) currentlyPlayingSong.speed = song.speed
+        updateTrack(song, {speed: song.speed})
+        pendingSongUpdateTimeout[k] = null;
+    },3000)
+}
+playbackSpeedPopupSpeedSlider.oninput = () => {
+    const newSpeed = Number(playbackSpeedPopupSpeedSlider.value)
+    playbackSpeedPopupSpeedText.innerText = newSpeed + "x"
+    audio.playbackRate = newSpeed
+    updateSpeedValueAfterDelay(currentlyPlayingSong.id, "playbackRate", newSpeed)
+    currentTrackEffectiveTime = getLogicalTrackLength(currentlyPlayingSong, newSpeed)
+    totalTimeSpan.innerText = formatTime(currentTrackEffectiveTime) || '0:00'
+    fullscreenTotalTime.innerText = formatTime(currentTrackEffectiveTime) || '0:00'
+}
+playbackSpeedPopupPreservePitch.oninput = () => {
+    const checked = playbackSpeedPopupPreservePitch.checked
+    updateSpeedValueAfterDelay(currentlyPlayingSong.id, "preservePitch", checked)
+    audio.preservesPitch = checked
+}
 
 uploadArea.onclick = () => {
     const file = document.createElement('input')
     file.type = 'file'
     file.accept = 'audio/*'
     file.click();
-    file.onchange = () => {
-        addSongsFromFiles(file.files)
+    file.onchange = async () => {
+        await addSongsFromFiles(file.files)
         selectPlaylist(currentlyViewingPlaylist.id)
     }
 }
 
-function dropEvent(ev) {
+async function dropEvent(ev) {
     ev.preventDefault();
     if (ev.dataTransfer.files.length === 0) return;
-    const ids = addSongsFromFiles(ev.dataTransfer.files)
+    const ids = await addSongsFromFiles(ev.dataTransfer.files)
     if (currentlyViewingPlaylist.id !== "all songs") {
         addSongsToPlaylist(ids, currentlyViewingPlaylist.id)
     }
@@ -1359,42 +1436,41 @@ async function requestPersistentStorage() {
     if (!isPersisted) await navigator.storage.persist();
 }
 
-function addSongsFromFiles(files) {
-    const ids = []
+async function addSongsFromFiles(files) {
     requestPersistentStorage();
-    for (const file of files) {
-        if (!file.type.startsWith('audio/')) continue;
-        parseBlob(new Blob([file], {type:file.type})).then(metadata => {
-            const newSong = {
-                id: crypto.randomUUID(),
-                title: metadata.common.title || file.name.replace(/\.[^/.]+$/, ""),
-                artist: metadata.common.artist || "",
-                album: metadata.common.album || "",
-                length: formatTime(metadata.format.duration),
-                filename: "local song",
-                date_added: new Date().toISOString(),
-                modified: new Date().toISOString(),
-            };
-            const albumCover = metadata.common.picture ? new Blob([metadata.common.picture[0].data], {type:metadata.common.picture[0].format}) : null
-            songStatuses[newSong.id] = "local"
-            songs.push(newSong);
-            addSongsToPlaylist([newSong.id], "all songs")
-            addDataToSongsDb({ 
-                ...newSong, 
-                filename: file, 
-                album_cover: albumCover, 
-                fullscreenbg: null 
-            });
+    files = Array.from(files).filter(f=>f.type.startsWith('audio/'))
+    return Promise.all(files.map(file=>{
+        return new Promise((res,rej)=>{
+            parseBlob(new Blob([file], {type:file.type})).then(metadata => {
+                const newSong = {
+                    id: crypto.randomUUID(),
+                    title: metadata.common.title || file.name.replace(/\.[^/.]+$/, ""),
+                    artist: metadata.common.artist || "",
+                    album: metadata.common.album || "",
+                    length: formatTime(metadata.format.duration),
+                    filename: "local song",
+                    date_added: new Date().toISOString(),
+                    modified: new Date().toISOString(),
+                };
+                const albumCover = metadata.common.picture ? new Blob([metadata.common.picture[0].data], {type:metadata.common.picture[0].format}) : null
+                songStatuses[newSong.id] = "local"
+                songs.push(newSong);
+                addSongsToPlaylist([newSong.id], "all songs")
+                addDataToSongsDb({ 
+                    ...newSong, 
+                    filename: file, 
+                    album_cover: albumCover, 
+                    fullscreenbg: null 
+                });
 
-            if (Prefrences.autoUpload && loggedIn) queueAction("upload", {id: newSong.id})
+                if (Prefrences.autoUpload && loggedIn) queueAction("upload", {id: newSong.id})
 
-            ids.push(newSong.id)
-        });
-    }
-    return ids
+                res(newSong.id)
+            }).catch(rej);
+        })
+    }))
 }
 
-let workingThroughQueue = false;
 async function workThroughQueue() {
     if (workingThroughQueue || !navigator.onLine) return;
     workingThroughQueue = true;
@@ -1752,6 +1828,7 @@ async function closeMiniplayer() {
         extraControls.appendChild(volumeBtn)
         extraControls.appendChild(volumeSlider)
         extraControls.appendChild(fullscreenBtn)
+        extraControls.appendChild(threeDotsButtonFooter)
         const progressContainer = createEl('div','progress-container')
         footer.appendChild(progressContainer)
         progressContainer.appendChild(currentTimeSpan)
@@ -3286,6 +3363,7 @@ function changeThemeColor(color, font, theme) {
     function rewrite(rules, target) {
         for (const rule of rules) {
             if (rule.type === CSSRule.KEYFRAMES_RULE) continue;
+            if (['.modal-overlay','.overlay','.fullscreen-overlay'].includes(rule.selectorText)) continue;
             if (rule.style && rule.selectorText) {
                 const style = rule.style;
                 if (!originalThemeDeclarations.has(style)) {

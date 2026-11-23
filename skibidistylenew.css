@@ -2130,11 +2130,30 @@ li.disabled-offline {
 }
 
 body[data-theme="light"] img[src*="/songplayer/icons/"][src*=".svg"] {
-    filter: brightness(0);
+    filter: brightness(0) !important
 }
 
 #main-holder {
   display: flex;
   flex-direction: column;
   width: 100%;
+}
+
+.three-dots-button img, #threeDotsButtonFooter img {
+  height: 15px;
+  rotate: 90deg;
+  filter: invert(100%);
+}
+
+#playbackSpeedPopupSpeedText {
+  width: 40px;
+}
+
+#playbackSpeedPopup {
+  z-index: 12345;
+}
+
+#playbackSpeedPopup div {
+  display: flex;
+  gap: 8px;
 }

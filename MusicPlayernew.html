@@ -132,7 +132,7 @@
                                 <span id="playlistDownloadStatus" style="font-size: 0.8em; margin-left: 10px; color: #b3b3b3;"></span>
                             </div>
                         </div>
-                        <button class="three-dots-button" id="playlist-view-three-dots-button">⋮</button>
+                        <button class="three-dots-button" id="playlist-view-three-dots-button"><img src="https://torok.ing/songplayer/icons/threedots.svg"></button>
                     </div>
                     <div class="playlist-header-container-but-cooler">
                         <div class="playlist-header-sticky playlist-header">
@@ -163,6 +163,11 @@
         <div id="customContextMenu" class="custom-context-menu hidden">
 
         </div>
+    </div>
+
+    <div id="playbackSpeedPopup" class="hidden popup">
+        <div><span id="playbackSpeedPopupSpeedText">1.0x</span><input id="playbackSpeedPopupSpeed" type="range" min="0.5" max="1.5" step="0.01"></div>
+        <div><span>Preserve Pitch</span><input id="playbackSpeedPopupPreservePitch" type="checkbox"></div>
     </div>
 
     <!-- Fullscreen Player Overlay -->
@@ -288,6 +293,9 @@
                 <button id="fullscreenToggleBtn" title="Fullscreen">
                     <img src="https://torok.ing/songplayer/icons/fullscreen.svg" alt="Fullscreen">
                 </button>
+                <button id="threeDotsButtonFooter" title="More">
+                    <img src="https://torok.ing/songplayer/icons/threedots.svg" alt="More">
+                </button>
             </div>
         </div>
 
@@ -355,7 +363,7 @@
                         <div id="songPlaybackForm" class="playlist-edit-details">
                             <div class="form-row">
                                 <label for="modalSongPlaybackSpeed">Playback Speed:</label>
-                                <input type="number" id="modalSongPlaybackSpeed" name="speed" min="0.5" max="2" step="0.01" value="1">
+                                <input type="number" id="modalSongPlaybackSpeed" name="speed" min="0.5" max="1.5" step="0.01" value="1">
                             </div>
                             <div class="form-row">
                                 <label for="modalSongPreservePitch">Preserve Pitch:</label>
